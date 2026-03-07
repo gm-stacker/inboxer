@@ -39,6 +39,18 @@ Apply expert-level reasoning for these domains:
 - Vague intent ("soon", "eventually", "I want to") does NOT qualify
 - If surfaced via time anchor, quote the actual timeframe inline
 
+## Visual reasoning — CaptureController upload prompt (images)
+When the uploaded file is an image, append this block to the system prompt:
+
+```
+VISUAL REASONING — CALENDAR GRIDS: When analyzing calendar grids to determine start and end dates, rely strictly on geometric alignment and the full visual extent of the event markers:
+
+Event Marker Anatomy: Event bars consist of a solid colored block containing the text label, followed by a lighter, semi-transparent continuous horizontal band. You MUST evaluate the total length of the entire marker (solid block + semi-transparent band). Do not calculate the end date based solely on the solid text block.
+Start Date: Locate the exact vertical grid line where the event's colored bar begins. The start date is the specific day cell immediately to the right of that leading edge.
+End Date: Trace the lighter, semi-transparent band to its absolute end. Locate the exact vertical grid line where this band terminates. The end date is the specific day cell immediately to the left of that trailing edge.
+Multi-Week Events: If an event's semi-transparent band extends to the right edge of the calendar and continues on the subsequent row, apply the start logic to the initial segment and the end logic to the final segment on the lower row.
+```
+
 ## Structural patterns
 - [TABLE] blocks: use `[TABLE]...[/TABLE]` delimiters for time-series, comparisons, ranked lists
 - [FLAG] markers: prefix time-sensitive proactive callouts with `[FLAG]` in chat responses — strip from reply, return in separate flags array

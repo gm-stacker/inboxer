@@ -1,15 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.IO;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
+using System.Text;
 using System;
 using System.Linq;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -17,15 +16,13 @@ namespace Backend.Controllers
     [Route("api/[controller]")]
     public class ChatController : ControllerBase
     {
-        private readonly IConfiguration _config;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
 
-        public ChatController(IConfiguration config, IHttpClientFactory httpClientFactory)
+        public ChatController(IGeminiService gemini, IConfiguration config)
         {
-            _config = config;
-            _httpClientFactory = httpClientFactory;
-            _vaultPath = _config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            _gemini = gemini;
+            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
         }
 
         [HttpPost]
@@ -33,14 +30,8 @@ namespace Backend.Controllers
         {
             if (string.IsNullOrWhiteSpace(request.Message)) return BadRequest("message is required.");
 
-            var apiKey = _config["Gemini:ApiKey"];
-            if (string.IsNullOrEmpty(apiKey)) return StatusCode(500, "Gemini API key missing");
-
-            var client = _httpClientFactory.CreateClient();
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={apiKey}";
-
             // Step 1: Classify Message
-            var classification = await ClassifyMessageAsync(client, url, request.Message);
+            var classification = await ClassifyMessageAsync(request.Message);
 
             // Step 2: Retrieve Relevant Notes
             var relevantContext = await RetrieveTopNotesAsync(request.Message, classification);
@@ -113,29 +104,10 @@ Oh, have a great time in Tokyo! I remember you mentioning you were really lookin
 --- NEW USER MESSAGE ---
 {request.Message}";
 
-            var geminiRequest = new
-            {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[] { new { parts = new[] { new { text = userPayload } } } },
-                generationConfig = new { temperature = 0.5 } // Slightly higher for conversational tone
-            };
-
             try
             {
-                var requestContent = new StringContent(JsonSerializer.Serialize(geminiRequest), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, requestContent);
-                var jsonStr = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode(500, $"Gemini API error: {jsonStr}");
-
-                using var doc = JsonDocument.Parse(jsonStr);
-                var aiReply = doc.RootElement
-                                      .GetProperty("candidates")[0]
-                                      .GetProperty("content")
-                                      .GetProperty("parts")[0]
-                                      .GetProperty("text")
-                                      .GetString() ?? "";
+                // Chat uses plain text response (no JSON mime type)
+                var aiReply = await _gemini.GenerateAsync(systemPrompt, userPayload, "text/plain", 0.5);
 
                 // Step 4: Parse Flags
                 var flags = new List<string>();
@@ -146,13 +118,9 @@ Oh, have a great time in Tokyo! I remember you mentioning you were really lookin
                 {
                     var trimmed = line.Trim();
                     if (trimmed.StartsWith("[FLAG]", StringComparison.OrdinalIgnoreCase))
-                    {
                         flags.Add(trimmed.Substring(6).Trim());
-                    }
                     else
-                    {
                         cleanReply.AppendLine(line);
-                    }
                 }
 
                 return Ok(new ChatResponse 
@@ -161,13 +129,17 @@ Oh, have a great time in Tokyo! I remember you mentioning you were really lookin
                     Flags = flags
                 });
             }
+            catch (GeminiException ex)
+            {
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, $"Error executing conversational chat: {ex.Message}");
             }
         }
 
-        private async Task<MessageClassification> ClassifyMessageAsync(HttpClient client, string url, string message)
+        private async Task<MessageClassification> ClassifyMessageAsync(string message)
         {
             var prompt = @"Classify the following user message into one or more of these categories:
 - PLAN: user is stating something they intend to do
@@ -183,28 +155,14 @@ Return strictly this JSON schema:
   ""entities"": [""Tokyo"", ""Sarah""],
   ""timeframe"": ""next week""
 }";
-            var geminiRequest = new
-            {
-                system_instruction = new { parts = new { text = prompt } },
-                contents = new[] { new { parts = new[] { new { text = message } } } },
-                generationConfig = new { temperature = 0.1, response_mime_type = "application/json" }
-            };
-
             try
             {
-                var requestContent = new StringContent(JsonSerializer.Serialize(geminiRequest), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, requestContent);
-                var jsonStr = await response.Content.ReadAsStringAsync();
-                
-                using var doc = JsonDocument.Parse(jsonStr);
-                var text = doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
-                
-                var cleanJson = Regex.Replace(text ?? "{}", @"```json\s*", "").Replace("```", "");
-                return JsonSerializer.Deserialize<MessageClassification>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new MessageClassification();
+                var text = await _gemini.GenerateAsync(prompt, message, "application/json", 0.1);
+                return JsonSerializer.Deserialize<MessageClassification>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new MessageClassification();
             }
             catch
             {
-                return new MessageClassification(); // fail gracefully
+                return new MessageClassification();
             }
         }
 
@@ -223,31 +181,22 @@ Return strictly this JSON schema:
                 var contentLower = content.ToLowerInvariant();
                 double score = 0;
 
-                // 1. Entities Match (High weight)
-                foreach(var entity in classification.Entities)
-                {
+                foreach (var entity in classification.Entities)
                     if (contentLower.Contains(entity.ToLowerInvariant())) score += 5;
-                }
 
-                // 2. Keyword Match (Medium weight)
-                foreach(var part in messageParts)
-                {
+                foreach (var part in messageParts)
                     if (part.Length > 3 && contentLower.Contains(part)) score += 1;
-                }
 
-                // 3. Recency (Low weight, just a tiebreaker)
                 var daysOld = (DateTime.Now - fileInfo.LastWriteTime).TotalDays;
                 score += (1.0 / (daysOld + 1.0));
 
-                if (score > 0.5) // Only include if there's SOME relevance
+                if (score > 0.5)
                 {
                     var categoryFolder = fileInfo.Directory?.Name ?? "Unknown";
-                    string formatted = $"--- File: {categoryFolder}/{Path.GetFileName(file)} ---\n{content}\n";
-                    scoredNotes.Add((formatted, score));
+                    scoredNotes.Add(($"--- File: {categoryFolder}/{Path.GetFileName(file)} ---\n{content}\n", score));
                 }
             }
 
-            // Take top 15
             var topNotes = scoredNotes.OrderByDescending(n => n.Score).Take(15).Select(n => n.Content);
             return string.Join("\n\n", topNotes);
         }
@@ -265,7 +214,7 @@ Return strictly this JSON schema:
     public class ChatTurn 
     {
         [JsonPropertyName("role")]
-        public string Role { get; set; } = string.Empty; // "user" or "assistant"
+        public string Role { get; set; } = string.Empty;
         
         [JsonPropertyName("content")]
         public string Content { get; set; } = string.Empty;

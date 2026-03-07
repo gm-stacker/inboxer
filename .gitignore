@@ -4,6 +4,10 @@
 .gemini/code_tracker/
 .gemini/implicit/
 
+# Ignore development settings
+Backend/appsettings.Development.json
+Backend/appsettings.Local.json
+
 # C# / .NET
 [Oo]bj/
 [Bb]in/

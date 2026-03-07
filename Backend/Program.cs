@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<Backend.Services.IGeminiService, Backend.Services.GeminiService>();
 builder.Services.AddOpenApi();
 builder.Services.AddHostedService<Backend.Services.VaultWatcherService>();
 

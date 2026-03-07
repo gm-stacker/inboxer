@@ -34,6 +34,29 @@ Only proceed to the Tester once the Code Reviewer returns a PASS verdict.
 - You are permitted to invoke /inboxer-fullstackdev and /inboxer-codereviewer and /inboxer-tester directly within this conversation without waiting for the user to trigger them manually.
 - Never allow work to begin on a new task while a previous task is still in progress or unverified.
 
+## Server Management
+
+When instructing the Developer to restart the frontend or backend, always use these exact commands to avoid stale-process port conflicts:
+
+**Frontend restart** (`vite.config.ts` pins `127.0.0.1:5173` with `strictPort: true` — no flags needed):
+```bash
+pkill -9 -f "vite|node" 2>/dev/null
+lsof -ti:5173 | xargs kill -9 2>/dev/null
+sleep 1 && cd /path/to/frontend && npm run dev > /tmp/frontend.log 2>&1 &
+```
+⚠️ Never edit `vite.config.ts` while Vite is running — it will trigger an auto-restart that can crash it. Kill first, edit, then start.
+
+Access the frontend at **`http://127.0.0.1:5173`** (not `localhost:5173` — Chrome may fail to resolve the bare hostname on some systems).
+
+**Backend restart**:
+```bash
+pkill -f "dotnet run|dotnet.*Backend" 2>/dev/null
+lsof -ti:5177 | xargs kill -9 2>/dev/null
+sleep 1 && cd /path/to/Backend && dotnet run > /tmp/backend.log 2>&1 &
+```
+
+**Why**: Vite silently bumps to the next available port (5174, 5175…) if stale processes occupy 5173. The user's browser always points to 5173. Always kill all node processes before restarting to guarantee the correct port.
+
 ## Available Skills
 The following skills are available and will be loaded automatically when relevant:
 - `vault-write-safety` — any vault/file write operations

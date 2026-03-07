@@ -571,6 +571,91 @@ body {
   background-size: 12px;
 }
 
+/* --- FILE ATTACH CHIP (capture box) --- */
+.capture-file-chip-row {
+  padding: 0 16px 10px 16px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--c-active);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 4px 10px 4px 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.file-chip-icon {
+  font-size: 14px;
+  color: var(--c-accent);
+  flex-shrink: 0;
+}
+
+.file-chip-name {
+  font-size: 0.78rem;
+  color: var(--c-text-muted);
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+.file-chip-remove {
+  background: none;
+  border: none;
+  color: var(--c-text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0 0 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.file-chip-remove:hover {
+  color: var(--c-text);
+}
+
+/* Attach button in capture toolbar */
+.attach-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  line-height: 1;
+}
+
+.attach-btn:hover {
+  border-color: var(--c-text-muted);
+  color: var(--c-text);
+}
+
+/* Uploading indicator in editor toolbar */
+.toolbar-uploading {
+  font-size: 0.7rem;
+  color: var(--c-accent);
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  animation: pulse-opacity 1s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 .commit-btn {
   background: var(--c-text);
   color: var(--c-bg);

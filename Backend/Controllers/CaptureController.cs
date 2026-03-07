@@ -1,17 +1,15 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -20,40 +18,28 @@ namespace Backend.Controllers
     public class CaptureController : ControllerBase
     {
         private readonly string _vaultPath;
-        private readonly string? _geminiApiKey;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IGeminiService _gemini;
+        private readonly ILogger<CaptureController> _logger;
 
-        public CaptureController(IConfiguration configuration, IHttpClientFactory httpClientFactory)
+        public CaptureController(IConfiguration configuration, IGeminiService gemini, ILogger<CaptureController> logger)
         {
-            _httpClientFactory = httpClientFactory;
-            // Pointing to the vault directory relative to the backend project
+            _gemini = gemini;
+            _logger = logger;
             _vaultPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
             if (!Directory.Exists(_vaultPath))
-            {
                 Directory.CreateDirectory(_vaultPath);
-            }
-
-            _geminiApiKey = configuration["Gemini:ApiKey"];
         }
+
+        // ── POST /api/capture ─────────────────────────────────────────────────
 
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] CaptureRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.RawText))
-            {
                 return BadRequest("raw_text is required.");
-            }
 
-            if (string.IsNullOrWhiteSpace(_geminiApiKey))
-            {
-                return BadRequest("Gemini API Key is missing in appsettings.json or configuration.");
-            }
-
-            // Get current folders in vault for taxonomy rules
             var taxonomy = Directory.GetDirectories(_vaultPath).Select(Path.GetFileName).ToArray();
             var currentTimeSgt = DateTime.UtcNow.AddHours(8).ToString("yyyy-MM-ddTHH:mm:sszzz");
-
-            // Build historical context from vault for Memory Echo
             var pastNotesCtx = await GetVaultContextAsync();
 
             var systemPrompt = @"Role: You are the Taxonomy Routing Engine for a local-first markdown knowledge base. Your job is to analyze incoming user text, extract metadata, calculate relative time occurrences, cross-reference past notes, and determine the correct folder destination.
@@ -113,109 +99,79 @@ past_notes:
 
 raw_text: {request.RawText}";
 
-            var geminiRequest = new
+            try
             {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[]
+                var textResponse = await _gemini.GenerateAsync(systemPrompt, userPayload, "application/json", 0.2);
+
+                if (string.IsNullOrWhiteSpace(textResponse))
+                    return StatusCode(500, "Empty response from Gemini.");
+
+                var options = new JsonSerializerOptions
                 {
-                    new { parts = new[] { new { text = userPayload } } }
-                },
-                generationConfig = new { responseMimeType = "application/json" }
-            };
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                };
+                var routingData = JsonSerializer.Deserialize<GeminiRoutingResponse>(textResponse, options);
 
-            var client = _httpClientFactory.CreateClient();
-            var response = await client.PostAsJsonAsync($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={_geminiApiKey}", geminiRequest);
+                if (routingData == null)
+                    return StatusCode(500, "Failed to parse Gemini response.");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return StatusCode(500, $"Gemini API error: {error}");
-            }
-
-            var geminiResponse = await response.Content.ReadFromJsonAsync<JsonNode>();
-            var textResponse = geminiResponse?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-
-            if (string.IsNullOrWhiteSpace(textResponse))
-            {
-                return StatusCode(500, "Empty response from Gemini.");
-            }
-
-            // Clean markdown blocks if Gemini added them despite application/json mime type
-            if (textResponse.StartsWith("```json"))
-            {
-                textResponse = textResponse.Substring(7);
-                if (textResponse.EndsWith("```")) textResponse = textResponse.Substring(0, textResponse.Length - 3);
-            }
-
-            var options = new JsonSerializerOptions 
-            { 
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-            };
-            var routingData = JsonSerializer.Deserialize<GeminiRoutingResponse>(textResponse, options);
-
-            if (routingData == null)
-            {
-                return StatusCode(500, "Failed to parse Gemini response.");
-            }
-
-            // Low confidence handling
-            if (routingData.ConfidenceScore < 0.6m)
-            {
-                routingData.TargetCategory = "Inbox";
-                var tagsList = routingData.Frontmatter.Tags?.ToList() ?? new List<string>();
-                tagsList.Add("requires_review");
-                routingData.Frontmatter.Tags = tagsList.ToArray();
-            }
-
-            if (string.IsNullOrWhiteSpace(routingData.SuggestedFilename) || routingData.SuggestedFilename == "BriefDescriptionWithoutDate")
-            {
-                routingData.SuggestedFilename = "Note_" + Guid.NewGuid().ToString("N").Substring(0, 4);
-            }
-
-            // Apply any text document replacements generated by the AI
-            if (routingData.Updates != null && routingData.Updates.Any())
-            {
-                foreach (var update in routingData.Updates)
+                if (routingData.ConfidenceScore < 0.6m)
                 {
-                    try
+                    routingData.TargetCategory = "Inbox";
+                    var tagsList = routingData.Frontmatter.Tags?.ToList() ?? new List<string>();
+                    tagsList.Add("requires_review");
+                    routingData.Frontmatter.Tags = tagsList.ToArray();
+                }
+
+                if (string.IsNullOrWhiteSpace(routingData.SuggestedFilename) || routingData.SuggestedFilename == "BriefDescriptionWithoutDate")
+                    routingData.SuggestedFilename = "Note_" + Guid.NewGuid().ToString("N").Substring(0, 4);
+
+                // Apply AI-generated note updates (task completions etc.)
+                if (routingData.Updates != null && routingData.Updates.Any())
+                {
+                    foreach (var update in routingData.Updates)
                     {
-                        var updatePath = Path.Combine(_vaultPath, update.SourceFile);
-                        if (System.IO.File.Exists(updatePath))
+                        try
                         {
-                            var existingContent = await System.IO.File.ReadAllTextAsync(updatePath);
-                            if (!string.IsNullOrWhiteSpace(update.ExactSearch) && existingContent.Contains(update.ExactSearch))
+                            var updatePath = Path.Combine(_vaultPath, update.SourceFile);
+                            if (System.IO.File.Exists(updatePath))
                             {
-                                var newContent = existingContent.Replace(update.ExactSearch, update.ReplaceWith);
-                                await System.IO.File.WriteAllTextAsync(updatePath, newContent);
-                                Console.WriteLine($"Applied update to {update.SourceFile}");
+                                var existingContent = await System.IO.File.ReadAllTextAsync(updatePath);
+                                if (!string.IsNullOrWhiteSpace(update.ExactSearch) && existingContent.Contains(update.ExactSearch))
+                                {
+                                    var newContent = existingContent.Replace(update.ExactSearch, update.ReplaceWith);
+                                    await System.IO.File.WriteAllTextAsync(updatePath, newContent);
+                                }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error applying update to {update.SourceFile}: {ex.Message}");
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning("Failed to apply update to {File}: {Error}", update.SourceFile, ex.Message);
+                        }
                     }
                 }
+
+                await ProcessAndSaveMarkdownFile(request.RawText, routingData);
+                return Ok(new { message = "Capture saved successfully.", details = routingData });
             }
-
-            await ProcessAndSaveMarkdownFile(request.RawText, routingData);
-
-            return Ok(new { message = "Capture saved successfully.", details = routingData });
+            catch (GeminiException ex)
+            {
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error during capture: {ex.Message}");
+            }
         }
+
+        // ── POST /api/capture/upload ──────────────────────────────────────────
 
         [HttpPost("upload")]
         public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string? description, [FromForm] string? category)
         {
             if (file == null || file.Length == 0)
-            {
                 return BadRequest("file is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(_geminiApiKey))
-            {
-                return BadRequest("Gemini API Key is missing in appsettings.json or configuration.");
-            }
 
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms);
@@ -225,7 +181,6 @@ raw_text: {request.RawText}";
 
             var taxonomy = Directory.GetDirectories(_vaultPath).Select(Path.GetFileName).ToArray();
             var currentTimeSgt = DateTime.UtcNow.AddHours(8).ToString("yyyy-MM-ddTHH:mm:sszzz");
-
             var pastNotesCtx = await GetVaultContextAsync();
 
             var systemPrompt = @"Role: You are the Taxonomy Routing Engine for a local-first markdown knowledge base. Your job is to analyze incoming user files (images or documents) along with an optional user description, extract metadata, calculate relative time occurrences, cross-reference past notes, and determine the correct folder destination.
@@ -244,15 +199,15 @@ Routing Rules:
     - AVOID TRIVIALITY: Do not generate insights based on superficial geographical or weather overlaps. 
     - Maintain a professional, non-judgmental tone.
     - Explain *why* the connection matters and provide actionable insights.
-- Calendar image parsing rules:
-  - Step 1: In the `visual_reasoning` field, first identify the column headers (Sun, Mon, Tue, etc.).
-  - Step 2: For EACH event bar, locate the actual text label (and its icon) inside the pill, NOT the absolute left edge of the colored background shape. Calendar apps use left-padding, meaning the colored pill often extends backwards into the previous day's column even though the event doesn't start there.
-  - Step 3: Trace a strict vertical line UP from the beginning of the TEXT/ICON inside the event pill to find its Day column.
-  - Step 4: Identify the date number located in THAT specific Day column. Note: do NOT look at the date number immediately to the left of the bar's start; look at the date number at the top of the column where the text begins.
-  - Step 5: Write out your extraction in the `visual_reasoning` field, explaining how you aligned the text (not the padding) to the column header.
-  - Step 6: Output the extracted date alongside the event name in the `extracted_text`.
 - Extracted Text: Provide a transcription or summary of the file's content in `extracted_text`. 
 - CRITICAL: The `extracted_text` MUST ONLY contain new information found in the file. DO NOT REPEAT any part of the `User Description` in the `extracted_text` field. If the file contains no new information beyond the description, leave `extracted_text` empty.
+
+VISUAL REASONING — CALENDAR GRIDS: When analyzing calendar grids to determine start and end dates, rely strictly on geometric alignment and the full visual extent of the event markers:
+
+Event Marker Anatomy: Event bars consist of a solid colored block containing the text label, followed by a lighter, semi-transparent continuous horizontal band. You MUST evaluate the total length of the entire marker (solid block + semi-transparent band). Do not calculate the end date based solely on the solid text block.
+Start Date: Locate the exact vertical grid line where the event's colored bar begins. The start date is the specific day cell immediately to the right of that leading edge.
+End Date: Trace the lighter, semi-transparent band to its absolute end. Locate the exact vertical grid line where this band terminates. The end date is the specific day cell immediately to the left of that trailing edge.
+Multi-Week Events: If an event's semi-transparent band extends to the right edge of the calendar and continues on the subsequent row, apply the start logic to the initial segment and the end logic to the final segment on the lower row.
 
 Output Requirement:
 You must respond ONLY with a valid JSON object. Do not include conversational text or markdown blocks outside the JSON. Use the following schema:
@@ -278,7 +233,6 @@ You must respond ONLY with a valid JSON object. Do not include conversational te
   ""footnotes"": [""Contextual insight""] | [],
   ""updates"": [],
   ""duplicates"": [],
-  ""visual_reasoning"": ""Your thought process for calendar alignment"",
   ""extracted_text"": ""Extracted text from the file goes here.""
 }";
 
@@ -289,106 +243,82 @@ past_notes:
 
 User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(description) ? "None provided" : description)}";
 
-            var geminiRequest = new
+            try
             {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[]
+                var textResponse = await _gemini.GenerateMultimodalAsync(systemPrompt, userPayload, mimeType, base64File, "application/json", 0.2);
+
+                if (string.IsNullOrWhiteSpace(textResponse))
+                    return StatusCode(500, "Empty response from Gemini.");
+
+                var options = new JsonSerializerOptions
                 {
-                    new { 
-                        parts = new object[] { 
-                            new { text = userPayload },
-                            new { inline_data = new { mime_type = mimeType, data = base64File } }
-                        } 
-                    }
-                },
-                generationConfig = new { responseMimeType = "application/json" }
-            };
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                };
+                GeminiRoutingResponse? routingData;
+                try
+                {
+                    routingData = JsonSerializer.Deserialize<GeminiRoutingResponse>(textResponse, options);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Failed to deserialize Gemini response: {Error}. Raw: {Raw}", ex.Message, textResponse);
+                    return StatusCode(500, $"Failed to parse Gemini response: {ex.Message}");
+                }
 
-            var client = _httpClientFactory.CreateClient();
-            var response = await client.PostAsJsonAsync($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={_geminiApiKey}", geminiRequest);
+                if (routingData == null)
+                    return StatusCode(500, "Failed to parse Gemini response.");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return StatusCode(500, $"Gemini API error: {error}");
+                if (!string.IsNullOrEmpty(category))
+                    routingData.TargetCategory = category;
+                else if (routingData.ConfidenceScore < 0.6m)
+                {
+                    routingData.TargetCategory = "Inbox";
+                    var tagsList = routingData.Frontmatter.Tags?.ToList() ?? new List<string>();
+                    tagsList.Add("requires_review");
+                    routingData.Frontmatter.Tags = tagsList.ToArray();
+                }
+
+                if (string.IsNullOrWhiteSpace(routingData.SuggestedFilename) || routingData.SuggestedFilename == "BriefDescriptionWithoutDate")
+                    routingData.SuggestedFilename = "Upload_" + Guid.NewGuid().ToString("N").Substring(0, 4);
+
+                // Save raw file to category folder
+                string categoryPath = Path.Combine(_vaultPath, routingData.TargetCategory);
+                if (!Directory.Exists(categoryPath))
+                    Directory.CreateDirectory(categoryPath);
+
+                string safeFileName = Guid.NewGuid().ToString("N").Substring(0, 6) + "_" + file.FileName.Replace(" ", "_");
+                string savedFilePath = Path.Combine(categoryPath, safeFileName);
+                await System.IO.File.WriteAllBytesAsync(savedFilePath, fileBytes);
+
+                // Build note body
+                string noteBody = "";
+                if (!string.IsNullOrWhiteSpace(description))
+                    noteBody += $"{description}\n\n";
+
+                string embedSyntax = mimeType.StartsWith("image") ? $"![[{safeFileName}]]" : $"[[{safeFileName}]]";
+                noteBody += $"{embedSyntax}\n\n";
+
+                var cleanExtracted = routingData.ExtractedText?.Trim() ?? "";
+                if (!string.IsNullOrWhiteSpace(description) && cleanExtracted.StartsWith(description.Trim()))
+                    cleanExtracted = cleanExtracted.Substring(description.Trim().Length).Trim();
+
+                noteBody += $"{cleanExtracted}\n";
+                await ProcessAndSaveMarkdownFile(noteBody, routingData);
+
+                return Ok(new { message = "File captured successfully.", details = routingData });
             }
-
-            var geminiResponse = await response.Content.ReadFromJsonAsync<JsonNode>();
-            var textResponse = geminiResponse?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-
-            if (string.IsNullOrWhiteSpace(textResponse))
+            catch (GeminiException ex)
             {
-                return StatusCode(500, "Empty response from Gemini.");
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
             }
-
-            if (textResponse.StartsWith("```json"))
+            catch (Exception ex)
             {
-                textResponse = textResponse.Substring(7);
-                if (textResponse.EndsWith("```")) textResponse = textResponse.Substring(0, textResponse.Length - 3);
+                return StatusCode(500, $"Error during file upload: {ex.Message}");
             }
-
-            var options = new JsonSerializerOptions 
-            { 
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-            };
-            var routingData = JsonSerializer.Deserialize<GeminiRoutingResponse>(textResponse, options);
-
-            if (routingData == null)
-            {
-                return StatusCode(500, "Failed to parse Gemini response.");
-            }
-
-            if (!string.IsNullOrEmpty(category))
-            {
-                routingData.TargetCategory = category;
-            }
-            else if (routingData.ConfidenceScore < 0.6m)
-            {
-                routingData.TargetCategory = "Inbox";
-                var tagsList = routingData.Frontmatter.Tags?.ToList() ?? new List<string>();
-                tagsList.Add("requires_review");
-                routingData.Frontmatter.Tags = tagsList.ToArray();
-            }
-
-            if (string.IsNullOrWhiteSpace(routingData.SuggestedFilename) || routingData.SuggestedFilename == "BriefDescriptionWithoutDate")
-            {
-                routingData.SuggestedFilename = "Upload_" + Guid.NewGuid().ToString("N").Substring(0, 4);
-            }
-
-            // Save the raw file to the category folder
-            string categoryPath = Path.Combine(_vaultPath, routingData.TargetCategory);
-            if (!Directory.Exists(categoryPath))
-            {
-                Directory.CreateDirectory(categoryPath);
-            }
-            
-            string safeFileName = Guid.NewGuid().ToString("N").Substring(0, 6) + "_" + file.FileName.Replace(" ", "_");
-            string savedFilePath = Path.Combine(categoryPath, safeFileName);
-            await System.IO.File.WriteAllBytesAsync(savedFilePath, fileBytes);
-
-            // Construct Note Body
-            string noteBody = "";
-            if (!string.IsNullOrWhiteSpace(description))
-            {
-                noteBody += $"{description}\n\n";
-            }
-            string embedSyntax = mimeType.StartsWith("image") ? $"![[{safeFileName}]]" : $"[[{safeFileName}]]";
-            noteBody += $"{embedSyntax}\n\n";
-
-            // Clean extracted_text if AI repeated the description despite prompt
-            var cleanExtracted = routingData.ExtractedText?.Trim() ?? "";
-            if (!string.IsNullOrWhiteSpace(description) && cleanExtracted.StartsWith(description.Trim()))
-            {
-               cleanExtracted = cleanExtracted.Substring(description.Trim().Length).Trim();
-            }
-            
-            noteBody += $"{cleanExtracted}\n";
-
-            await ProcessAndSaveMarkdownFile(noteBody, routingData);
-
-            return Ok(new { message = "File captured successfully.", details = routingData });
         }
+
+        // ── GET /api/capture/media/{category}/{filename} ──────────────────────
 
         [HttpGet("media/{category}/{filename}")]
         public async Task<IActionResult> GetMedia(string category, string filename)
@@ -399,21 +329,18 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
                 if (safeFileName.EndsWith(".HEIC.jpg", StringComparison.OrdinalIgnoreCase) || safeFileName.EndsWith(".HEIC.jpeg", StringComparison.OrdinalIgnoreCase))
                 {
                     safeFileName = safeFileName.Substring(0, safeFileName.LastIndexOf(".jpg", StringComparison.OrdinalIgnoreCase));
-                    if (safeFileName.EndsWith(".HEIC.jpeg", StringComparison.OrdinalIgnoreCase)) {
+                    if (safeFileName.EndsWith(".HEIC.jpeg", StringComparison.OrdinalIgnoreCase))
                         safeFileName = safeFileName.Substring(0, safeFileName.LastIndexOf(".jpeg", StringComparison.OrdinalIgnoreCase));
-                    }
                 }
 
                 string catPath = Path.Combine(_vaultPath, category);
                 string fullPath = Path.Combine(catPath, safeFileName);
-                
+
                 if (!System.IO.File.Exists(fullPath))
-                {
                     return NotFound();
-                }
 
                 string ext = Path.GetExtension(safeFileName).ToLowerInvariant();
-                
+
                 if (ext == ".heic")
                 {
                     string tempJpg = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".jpg");
@@ -431,7 +358,6 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
                     };
                     process.Start();
                     await process.WaitForExitAsync();
-                    
                     if (System.IO.File.Exists(tempJpg))
                     {
                         byte[] bytes = await System.IO.File.ReadAllBytesAsync(tempJpg);
@@ -458,18 +384,13 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
             }
         }
 
+        // ── POST /api/capture/query ───────────────────────────────────────────
+
         [HttpPost("query")]
         public async Task<IActionResult> Query([FromBody] CaptureChatRequest request)
         {
             if (request.Messages == null || !request.Messages.Any())
-            {
                 return BadRequest("messages array is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(_geminiApiKey))
-            {
-                return BadRequest("Gemini API Key is missing.");
-            }
 
             var pastNotesCtx = await GetVaultContextAsync();
 
@@ -517,70 +438,42 @@ CONVERSATION RULES:
 Conversation History:
 {string.Join("\n\n", request.Messages.Select(m => $"{m.Role.ToUpper()}:\n{m.Content}"))}";
 
-            var geminiRequest = new
+            try
             {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[]
+                var textResponse = await _gemini.GenerateAsync(systemPrompt, userPayload, "application/json", 0.2);
+
+                if (string.IsNullOrWhiteSpace(textResponse))
+                    return StatusCode(500, "Empty response from Gemini.");
+
+                var options = new JsonSerializerOptions
                 {
-                    new { parts = new[] { new { text = userPayload } } }
-                },
-                generationConfig = new { responseMimeType = "application/json" }
-            };
-
-            var client = _httpClientFactory.CreateClient();
-            var response = await client.PostAsJsonAsync($"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={_geminiApiKey}", geminiRequest);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return StatusCode(500, $"Gemini API error: {error}");
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                };
+                var queryResult = JsonSerializer.Deserialize<GeminiQueryResponse>(textResponse, options);
+                return Ok(queryResult);
             }
-
-            var geminiResponse = await response.Content.ReadFromJsonAsync<JsonNode>();
-            var textResponse = geminiResponse?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-
-            if (string.IsNullOrWhiteSpace(textResponse))
+            catch (GeminiException ex)
             {
-                return StatusCode(500, "Empty response from Gemini.");
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
             }
-
-            // Clean markdown blocks if Gemini added them despite application/json mime type
-            if (textResponse.StartsWith("```json"))
+            catch (Exception ex)
             {
-                textResponse = textResponse.Substring(7);
-                if (textResponse.EndsWith("```")) textResponse = textResponse.Substring(0, textResponse.Length - 3);
-            }
-
-            var options = new JsonSerializerOptions 
-            { 
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-            };
-            
-            try 
-            {
-               var queryResult = JsonSerializer.Deserialize<GeminiQueryResponse>(textResponse, options);
-               return Ok(queryResult);
-            }
-            catch(Exception ex)
-            {
-               return StatusCode(500, $"Failed to parse structured JSON: {ex.Message}");
+                return StatusCode(500, $"Failed to parse structured JSON: {ex.Message}");
             }
         }
+
+        // ── POST /api/capture/conversation ────────────────────────────────────
 
         [HttpPost("conversation")]
         public async Task<IActionResult> SaveConversation([FromBody] CaptureRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.RawText))
-            {
                 return BadRequest("raw_text is required.");
-            }
 
             string categoryPath = Path.Combine(_vaultPath, "Conversations");
             if (!Directory.Exists(categoryPath))
-            {
                 Directory.CreateDirectory(categoryPath);
-            }
 
             string filename = $"ChatLog_{DateTime.Now:yyyyMMdd_HHmmss}.md";
             string filePath = Path.Combine(categoryPath, filename);
@@ -589,37 +482,31 @@ Conversation History:
                                      "type: chat_log" + Environment.NewLine +
                                      "tags: [ai, conversation]" + Environment.NewLine +
                                      "---" + Environment.NewLine + Environment.NewLine;
-            
-            await System.IO.File.WriteAllTextAsync(filePath, yamlFrontmatter + request.RawText);
 
-            return Ok(new { message = "Conversation saved successfully.", filename = filename });
+            await System.IO.File.WriteAllTextAsync(filePath, yamlFrontmatter + request.RawText);
+            return Ok(new { message = "Conversation saved successfully.", filename });
         }
+
+        // ── Private Helpers ───────────────────────────────────────────────────
 
         private async Task ProcessAndSaveMarkdownFile(string rawText, GeminiRoutingResponse routingData)
         {
             string categoryPath = Path.Combine(_vaultPath, routingData.TargetCategory);
-            
-            // Create folder if it doesn't exist
             if (!Directory.Exists(categoryPath))
-            {
                 Directory.CreateDirectory(categoryPath);
-            }
 
             string filePath = Path.Combine(categoryPath, $"{routingData.SuggestedFilename}.md");
 
-            var tagsObj = routingData.Frontmatter.Tags?.Any() == true 
-                ? $"[{string.Join(", ", routingData.Frontmatter.Tags)}]" 
+            var tagsObj = routingData.Frontmatter.Tags?.Any() == true
+                ? $"[{string.Join(", ", routingData.Frontmatter.Tags)}]"
                 : "[]";
-            var entitiesObj = routingData.Frontmatter.Entities?.Any() == true 
-                ? $"[{string.Join(", ", routingData.Frontmatter.Entities)}]" 
+            var entitiesObj = routingData.Frontmatter.Entities?.Any() == true
+                ? $"[{string.Join(", ", routingData.Frontmatter.Entities)}]"
                 : "[]";
 
-            // Properly format dynamic metrics
             string metricsJson = "{}";
             if (routingData.Frontmatter.Metrics != null && routingData.Frontmatter.Metrics.Any())
-            {
                 metricsJson = JsonSerializer.Serialize(routingData.Frontmatter.Metrics);
-            }
 
             string wineYaml = "";
             if (routingData.Frontmatter.Wine != null && routingData.Frontmatter.Wine.Any())
@@ -628,7 +515,7 @@ Conversation History:
                 foreach (var kvp in routingData.Frontmatter.Wine)
                 {
                     var value = kvp.Value;
-                    if (value is JsonElement element)
+                    if (value is System.Text.Json.JsonElement element)
                     {
                         if (element.ValueKind == JsonValueKind.Array)
                         {
@@ -636,18 +523,12 @@ Conversation History:
                             wineYaml += $"  {kvp.Key}: [{string.Join(", ", list)}]" + Environment.NewLine;
                         }
                         else if (element.ValueKind == JsonValueKind.Number)
-                        {
                             wineYaml += $"  {kvp.Key}: {element.GetRawText()}" + Environment.NewLine;
-                        }
                         else
-                        {
-                            wineYaml += $"  {kvp.Key}: {element.ToString()}" + Environment.NewLine;
-                        }
+                            wineYaml += $"  {kvp.Key}: {element}" + Environment.NewLine;
                     }
                     else
-                    {
                         wineYaml += $"  {kvp.Key}: {value}" + Environment.NewLine;
-                    }
                 }
             }
 
@@ -655,14 +536,12 @@ Conversation History:
                                      $"type: {routingData.Frontmatter.Type}" + Environment.NewLine +
                                      $"tags: {tagsObj}" + Environment.NewLine +
                                      (routingData.Frontmatter.ExtractedDate != null ? $"extracted_date: {routingData.Frontmatter.ExtractedDate}{Environment.NewLine}" : "") +
-                                     $@"metrics: {metricsJson}" + Environment.NewLine +
+                                     $"metrics: {metricsJson}" + Environment.NewLine +
                                      $"entities: {entitiesObj}" + Environment.NewLine +
                                      wineYaml +
                                      "---" + Environment.NewLine + Environment.NewLine;
-            
-            string fileContent = yamlFrontmatter + rawText;
 
-            await System.IO.File.WriteAllTextAsync(filePath, fileContent);
+            await System.IO.File.WriteAllTextAsync(filePath, yamlFrontmatter + rawText);
         }
 
         private async Task<string> GetVaultContextAsync()
@@ -679,16 +558,18 @@ Conversation History:
                     var content = await System.IO.File.ReadAllTextAsync(file);
                     notesContext.Add($"File: {categoryFolder}/{Path.GetFileName(file)}\nContent:\n{content}\n");
                 }
-                
+
                 return string.Join("\n---\n", notesContext);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error reading vault: {ex.Message}");
+                _logger.LogError("Error reading vault: {Error}", ex.Message);
                 return string.Empty;
             }
         }
     }
+
+    // ── Request / Response Models ─────────────────────────────────────────────
 
     public class CaptureRequest
     {
@@ -705,7 +586,7 @@ Conversation History:
     public class ChatMessage
     {
         [JsonPropertyName("role")]
-        public string Role { get; set; } = string.Empty; // "user" or "assistant"
+        public string Role { get; set; } = string.Empty;
         
         [JsonPropertyName("content")]
         public string Content { get; set; } = string.Empty;
@@ -745,33 +626,28 @@ Conversation History:
         public string[] Tags { get; set; } = Array.Empty<string>();
         public string? ExtractedDate { get; set; }
         public string[] Entities { get; set; } = Array.Empty<string>();
-        // Add metrics logic as dynamic map
         [JsonPropertyName("metrics")]
         public Dictionary<string, object> Metrics { get; set; } = new Dictionary<string, object>();
         [JsonPropertyName("wine")]
         public Dictionary<string, object> Wine { get; set; } = new Dictionary<string, object>();
     }
 
-    public class GeminiQueryResponse 
+    public class GeminiQueryResponse
     {
         [JsonPropertyName("summary")]
         public string Summary { get; set; } = string.Empty;
-
         [JsonPropertyName("timeline")]
         public List<GeminiTimelineEvent> Timeline { get; set; } = new List<GeminiTimelineEvent>();
-
         [JsonPropertyName("undetermined_items")]
         public List<GeminiUndeterminedItem> UndeterminedItems { get; set; } = new List<GeminiUndeterminedItem>();
     }
 
-    public class GeminiTimelineEvent 
+    public class GeminiTimelineEvent
     {
         [JsonPropertyName("date")]
         public string Date { get; set; } = string.Empty;
-
         [JsonPropertyName("event")]
         public string Event { get; set; } = string.Empty;
-
         [JsonPropertyName("source_file")]
         public string SourceFile { get; set; } = string.Empty;
     }
@@ -780,7 +656,6 @@ Conversation History:
     {
         [JsonPropertyName("event")]
         public string Event { get; set; } = string.Empty;
-
         [JsonPropertyName("source_file")]
         public string SourceFile { get; set; } = string.Empty;
     }

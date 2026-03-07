@@ -29,6 +29,27 @@ You only act when instructed by the Team Lead agent (inboxer-teamlead), who will
 - If expected functionality does not exist yet (e.g. an endpoint is missing), report it as a failure with a clear description, not an error.
 - If the backend server is not running or an endpoint returns 500, report it as a FAILED infrastructure issue, not a test failure, and escalate immediately to the Team Lead.
 
+## ⚠️ Local Server Testing — CRITICAL CONSTRAINT
+
+The browser subagent runs in an **isolated sandbox**. `localhost` inside the browser tool does NOT resolve to the user's machine. **Never use the browser subagent to test localhost URLs** — it will always time out (30–60s wasted).
+
+For local server checks, use these instead:
+
+```bash
+# Check if a port is actually listening
+lsof -i:5173 | grep LISTEN
+
+# Verify the server returns a valid response
+curl -s --max-time 3 http://localhost:5173/ | head -5
+
+# Check backend health
+curl -s --max-time 3 http://localhost:5177/api/capture
+```
+
+Only use the browser subagent for:
+- Publicly accessible URLs (e.g. deployed staging/production)
+- File-based URLs (e.g. `file:///...`)
+
 ## Available Skills
 The following skills are available and will be loaded automatically when relevant:
 - `vault-write-safety` — any vault/file write operations

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import './App.css'
 
@@ -167,6 +167,11 @@ function App() {
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null)
   const [moveToCategory, setMoveToCategory] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingToNote, setIsUploadingToNote] = useState(false)
+
+  // File input refs
+  const captureFileInputRef = useRef<HTMLInputElement>(null)
+  const noteFileInputRef = useRef<HTMLInputElement>(null)
 
   // Form State
   const [selectedDestCategory, setSelectedDestCategory] = useState<string>('')
@@ -622,6 +627,72 @@ function App() {
       console.error(err)
     }
   }
+
+  // Upload a file into the currently open note's category, then insert ![[filename]] at cursor
+  const handleNoteFileUpload = useCallback(async (file: File, cursorChunkIndex: number, cursorPos: number) => {
+    if (!selectedNote) return;
+    setIsUploadingToNote(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', selectedNote.category);
+      const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
+        // Insert into note content at cursor chunk
+        const { props, body } = parseNoteContent(selectedNote.content);
+        const chunks = body.split(/(!\[\[.*?\]\])/g);
+        const chunk = chunks[cursorChunkIndex] || '';
+        const newChunk = chunk.slice(0, cursorPos) + `\n${embed}\n` + chunk.slice(cursorPos);
+        chunks[cursorChunkIndex] = newChunk;
+        setSelectedNote({ ...selectedNote, content: joinNoteContent(props, chunks.join('')) });
+      } else {
+        console.error('Upload failed', await res.text());
+      }
+    } catch (err) {
+      console.error('Upload error', err);
+    } finally {
+      setIsUploadingToNote(false);
+    }
+  }, [selectedNote, API_BASE_URL]);
+
+  // Direct file upload to note using multipart — saves into note's category folder only
+  const handleNoteFileSelect = useCallback(async (file: File) => {
+    if (!selectedNote) return;
+    setIsUploadingToNote(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', selectedNote.category);
+      const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
+        const { props, body } = parseNoteContent(selectedNote.content);
+        setSelectedNote({ ...selectedNote, content: joinNoteContent(props, body + `\n\n${embed}\n`) });
+      } else {
+        console.error('Upload failed', await res.text());
+      }
+    } catch (err) {
+      console.error('Upload error', err);
+    } finally {
+      setIsUploadingToNote(false);
+    }
+  }, [selectedNote, API_BASE_URL]);
+
+  // Paste handler for capture textarea
+  const handleCapturePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = e.clipboardData.files;
+    if (files && files.length > 0) {
+      e.preventDefault();
+      setSelectedFile(files[0]);
+    }
+  };
 
   const handleGenerateEchoes = async () => {
     if (!selectedNote) return;
@@ -1161,6 +1232,19 @@ function App() {
 
               {/* Inline Editor */}
 
+              {/* Hidden file input for note editor */}
+              <input
+                type="file"
+                ref={noteFileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleNoteFileSelect(file);
+                  e.target.value = '';
+                }}
+              />
+
               <div className="editor-toolbar">
                 <div className="toolbar-group">
                   <span className="material-icons toolbar-icon">undo</span>
@@ -1177,6 +1261,15 @@ function App() {
                   <span className="material-icons toolbar-icon">code</span>
                   <span className="material-icons toolbar-icon">format_list_bulleted</span>
                   <span className="material-icons toolbar-icon">checklist_rtl</span>
+                </div>
+                <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
+                  <span
+                    className="material-icons toolbar-icon"
+                    title="Attach file"
+                    onClick={() => noteFileInputRef.current?.click()}
+                    style={{ cursor: 'pointer' }}
+                  >attach_file</span>
+                  {isUploadingToNote && <span className="toolbar-uploading">uploading...</span>}
                 </div>
               </div>
 
@@ -1241,6 +1334,14 @@ function App() {
                           const newChunks = [...chunks];
                           newChunks[i] = e.target.value;
                           setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
+                        }}
+                        onPaste={(e) => {
+                          const files = e.clipboardData.files;
+                          if (files && files.length > 0) {
+                            e.preventDefault();
+                            const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
+                            handleNoteFileUpload(files[0], i, cursorPos);
+                          }
                         }}
                         style={{ overflow: 'hidden', resize: 'none' }}
                         placeholder={i === 0 ? "Start writing..." : ""}
@@ -1365,14 +1466,44 @@ function App() {
                 <p>{captureMode === 'capture' ? 'The AI engine handles the rest.' : 'Synthesize answers instantly.'}</p>
               </div>
 
+              {/* Hidden file input for capture box */}
+              <input
+                type="file"
+                ref={captureFileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setSelectedFile(file);
+                  e.target.value = '';
+                }}
+              />
+
               <form onSubmit={handleSubmitCapture} className="capture-form-container">
                 <textarea
                   className="capture-textarea"
                   placeholder={captureMode === 'capture' ? "What's on your mind..." : "Ask a question..."}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
+                  onPaste={captureMode === 'capture' ? handleCapturePaste : undefined}
                   autoFocus
                 />
+
+                {/* File chip — shown when a file is attached */}
+                {captureMode === 'capture' && selectedFile && (
+                  <div className="capture-file-chip-row">
+                    <div className="file-chip">
+                      <span className="material-icons file-chip-icon">attach_file</span>
+                      <span className="file-chip-name">{selectedFile.name}</span>
+                      <button
+                        type="button"
+                        className="file-chip-remove"
+                        onClick={() => setSelectedFile(null)}
+                        title="Remove attachment"
+                      >✕</button>
+                    </div>
+                  </div>
+                )}
 
                 {captureMode === 'capture' && (
                   <div className="quick-actions" style={{ padding: '0 24px 12px 24px', display: 'flex', gap: '8px' }}>
@@ -1385,14 +1516,24 @@ function App() {
                 <div className="capture-form-toolbar">
                   <div className="toolbar-left">
                     {captureMode === 'capture' && (
-                      <select
-                        className="toolbar-pill dest-select"
-                        value={selectedDestCategory}
-                        onChange={(e) => setSelectedDestCategory(e.target.value)}
-                      >
-                        <option value="">Auto-Route (AI)</option>
-                        {taxonomies.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                      </select>
+                      <>
+                        <select
+                          className="toolbar-pill dest-select"
+                          value={selectedDestCategory}
+                          onChange={(e) => setSelectedDestCategory(e.target.value)}
+                        >
+                          <option value="">Auto-Route (AI)</option>
+                          {taxonomies.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          className="toolbar-pill attach-btn"
+                          onClick={() => captureFileInputRef.current?.click()}
+                          title="Attach a file"
+                        >
+                          <span className="material-icons" style={{ fontSize: '15px', verticalAlign: 'middle' }}>attach_file</span>
+                        </button>
+                      </>
                     )}
                   </div>
                   <button type="submit" className="commit-btn" disabled={isQuerying}>

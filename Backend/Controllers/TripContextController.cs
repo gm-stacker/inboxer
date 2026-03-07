@@ -1,15 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.IO;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using System;
 using System.Linq;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -17,33 +15,22 @@ namespace Backend.Controllers
     [Route("api/[controller]")]
     public class TripContextController : ControllerBase
     {
-        private readonly IConfiguration _config;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
 
-        public TripContextController(IConfiguration config, IHttpClientFactory httpClientFactory)
+        public TripContextController(IGeminiService gemini, IConfiguration config)
         {
-            _config = config;
-            _httpClientFactory = httpClientFactory;
-            _vaultPath = _config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            _gemini = gemini;
+            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
         }
 
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] TripContextRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.Destination))
-            {
                 return BadRequest("destination is required.");
-            }
-
-            var apiKey = _config["Gemini:ApiKey"];
-            if (string.IsNullOrEmpty(apiKey)) return StatusCode(500, "Gemini API key missing");
 
             var vaultContext = await GetRelevantVaultContextAsync(request.Destination);
-
-            var client = _httpClientFactory.CreateClient();
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={apiKey}";
-
             var dateStr = string.IsNullOrWhiteSpace(request.Date) ? "an upcoming date" : request.Date;
 
             var systemPrompt = $@"CRITICAL INSTRUCTION: Your primary job is to add expertise and insight that is NOT already in the user's notes. Never restate or summarise what the user has already written. If you find yourself writing something the user could have read directly from their own notes, stop and replace it with genuine domain knowledge instead.
@@ -63,7 +50,7 @@ Rules:
   ""prepare"": [""Item to bring 1""]
 }}
 
-Sections explaination:
+Sections explanation:
 1. **Tasks & Reminders** (`tasks`) — anything they noted they need to do at or near this destination
 2. **Past Experiences** (`pastExperiences`) — anything they previously noted about this place (good or bad)
 3. **People & Connections** (`people`) — any people in their notes associated with this location
@@ -85,42 +72,19 @@ Sections explaination:
             var userPayload = $@"User's Notes:
 {vaultContext}";
 
-            var geminiRequest = new
-            {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[] { new { parts = new[] { new { text = userPayload } } } },
-                generationConfig = new
-                {
-                    temperature = 0.2,
-                    response_mime_type = "application/json"
-                }
-            };
-
             try
             {
-                var requestContent = new StringContent(JsonSerializer.Serialize(geminiRequest), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, requestContent);
-                var jsonStr = await response.Content.ReadAsStringAsync();
+                var text = await _gemini.GenerateAsync(systemPrompt, userPayload, "application/json", 0.2);
 
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode(500, $"Gemini API error: {jsonStr}");
-
-                using var doc = JsonDocument.Parse(jsonStr);
-                var contentText = doc.RootElement
-                                      .GetProperty("candidates")[0]
-                                      .GetProperty("content")
-                                      .GetProperty("parts")[0]
-                                      .GetProperty("text")
-                                      .GetString();
-
-                if (string.IsNullOrWhiteSpace(contentText))
+                if (string.IsNullOrWhiteSpace(text))
                     return Ok(new TripContextResponse());
 
-                var cleanJson = Regex.Replace(contentText, @"```json\s*", "");
-                cleanJson = Regex.Replace(cleanJson, @"```\s*$", "");
-
-                var resultObj = JsonSerializer.Deserialize<TripContextResponse>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var resultObj = JsonSerializer.Deserialize<TripContextResponse>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 return Ok(resultObj ?? new TripContextResponse());
+            }
+            catch (GeminiException ex)
+            {
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
             }
             catch (Exception ex)
             {
@@ -143,12 +107,10 @@ Sections explaination:
                     var fileInfo = new FileInfo(file);
                     var content = await System.IO.File.ReadAllTextAsync(file);
                     var contentLower = content.ToLowerInvariant();
-                    
-                    // Simple semantic match: keyword in body, entities array, or travel tag
+
                     bool hasDestKeyword = contentLower.Contains(searchTarget);
                     bool hasTravelTag = contentLower.Contains("tags: [") && (contentLower.Contains("travel") || contentLower.Contains("trip"));
-                    // Assuming frontmatter entities: [Location]
-                    bool impliesLocation = contentLower.Contains($"entities: [") && contentLower.Contains(searchTarget);
+                    bool impliesLocation = contentLower.Contains("entities: [") && contentLower.Contains(searchTarget);
 
                     if (hasDestKeyword || hasTravelTag || impliesLocation)
                     {
@@ -156,7 +118,7 @@ Sections explaination:
                         notesContext.Add($"--- File: {categoryFolder}/{Path.GetFileName(file)} ---\n{content}\n");
                     }
                 }
-                
+
                 return string.Join("\n\n", notesContext);
             }
             catch (Exception)

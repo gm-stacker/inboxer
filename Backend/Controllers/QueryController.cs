@@ -1,14 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using System.IO;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -16,15 +14,13 @@ namespace Backend.Controllers
     [Route("api/[controller]")]
     public class QueryController : ControllerBase
     {
-        private readonly IConfiguration _config;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
 
-        public QueryController(IConfiguration config, IHttpClientFactory httpClientFactory)
+        public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config)
         {
-            _config = config;
-            _httpClientFactory = httpClientFactory;
-            _vaultPath = _config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            _gemini = gemini;
+            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
         }
 
         [HttpPost]
@@ -33,17 +29,8 @@ namespace Backend.Controllers
             if (request.Messages == null || request.Messages.Count == 0)
                 return BadRequest("Messages cannot be empty");
 
-            // Extract the user's latest query
             var latestMessage = request.Messages[request.Messages.Count - 1].Content;
-            
-            // Build Context
             var vaultContext = await GetVaultContextAsync();
-
-            var apiKey = _config["Gemini:ApiKey"];
-            if (string.IsNullOrEmpty(apiKey)) return StatusCode(500, "Gemini API key missing");
-
-            var client = _httpClientFactory.CreateClient();
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={apiKey}";
 
             var systemPrompt = @"CRITICAL INSTRUCTION: Your primary job is to add expertise and insight that is NOT already in the user's notes. Never restate or summarise what the user has already written. If you find yourself writing something the user could have read directly from their own notes, stop and replace it with genuine domain knowledge instead.
 
@@ -134,43 +121,19 @@ Past Notes Context:
 User Query:
 {latestMessage}";
 
-            var geminiRequest = new
-            {
-                system_instruction = new { parts = new { text = systemPrompt } },
-                contents = new[] { new { parts = new[] { new { text = userPayload } } } },
-                generationConfig = new
-                {
-                    temperature = 0.1,
-                    response_mime_type = "application/json"
-                }
-            };
-
             try
             {
-                var requestContent = new StringContent(JsonSerializer.Serialize(geminiRequest), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, requestContent);
-                var jsonStr = await response.Content.ReadAsStringAsync();
+                var text = await _gemini.GenerateAsync(systemPrompt, userPayload, "application/json", 0.1);
 
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode(500, $"Gemini API error: {jsonStr}");
-
-                using var doc = JsonDocument.Parse(jsonStr);
-                var contentText = doc.RootElement
-                                      .GetProperty("candidates")[0]
-                                      .GetProperty("content")
-                                      .GetProperty("parts")[0]
-                                      .GetProperty("text")
-                                      .GetString();
-
-                if (string.IsNullOrWhiteSpace(contentText))
+                if (string.IsNullOrWhiteSpace(text))
                     return Ok(new AdvancedQueryResponse { Summary = "The AI returned an empty response." });
 
-                // Clean json markdown blocks
-                var cleanJson = Regex.Replace(contentText, @"```json\s*", "");
-                cleanJson = Regex.Replace(cleanJson, @"```\s*$", "");
-
-                var resultObj = JsonSerializer.Deserialize<AdvancedQueryResponse>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var resultObj = JsonSerializer.Deserialize<AdvancedQueryResponse>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 return Ok(resultObj ?? new AdvancedQueryResponse { Summary = "Failed to parse AI response." });
+            }
+            catch (GeminiException ex)
+            {
+                return StatusCode(500, $"Gemini API error ({ex.StatusCode}): {ex.ResponseBody}");
             }
             catch (Exception ex)
             {
@@ -185,7 +148,7 @@ User Query:
                 if (!Directory.Exists(_vaultPath)) return string.Empty;
 
                 var files = Directory.GetFiles(_vaultPath, "*.md", SearchOption.AllDirectories);
-                var notesContext = new List<string>();
+                var notesContext = new System.Collections.Generic.List<string>();
 
                 foreach (var file in files)
                 {
@@ -193,11 +156,9 @@ User Query:
                     var categoryFolder = fileInfo.Directory?.Name ?? "Unknown";
                     var content = await System.IO.File.ReadAllTextAsync(file);
                     var lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
-                    
-                    // We feed the full raw text including YAML so the AI can read `metrics` and `tags`
                     notesContext.Add($"--- File: {categoryFolder}/{Path.GetFileName(file)} | Last Modified: {lastModified} ---\n{content}\n");
                 }
-                
+
                 return string.Join("\n\n", notesContext);
             }
             catch (Exception)
@@ -219,7 +180,7 @@ User Query:
     public class QueryMessage
     {
         [JsonPropertyName("role")]
-        public string Role { get; set; } = string.Empty; // "user" or "assistant"
+        public string Role { get; set; } = string.Empty;
         
         [JsonPropertyName("content")]
         public string Content { get; set; } = string.Empty;
