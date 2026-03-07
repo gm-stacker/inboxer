@@ -7,6 +7,7 @@
 # Ignore development settings
 Backend/appsettings.Development.json
 Backend/appsettings.Local.json
+Backend/appsettings.json
 
 # C# / .NET
 [Oo]bj/
@@ -35,4 +36,4 @@ __pycache__/
 artefacts/
 
 # Logs
-*.log
+*.logBackend/appsettings.json
