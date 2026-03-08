@@ -230,6 +230,155 @@ public sealed class TaxonomyControllerTests : IDisposable
         Assert.Contains("renamed.md", json);
         Assert.True(File.Exists(Path.Combine(catDir, "renamed.md")));
     }
+    // ── MarkNoteAsDone ────────────────────────────────────────────────────────
+
+    [Fact(DisplayName = "MarkNoteAsDone adds done tag and done_at to frontmatter")]
+    public async Task MarkNoteAsDone_AddsDoneTagAndTimestamp()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Projects");
+        Directory.CreateDirectory(catDir);
+        var filePath = Path.Combine(catDir, "task.md");
+        await File.WriteAllTextAsync(filePath, "---\ntype: task\ntags:\n  - work\n---\n\nDo the thing.\n");
+
+        var result = await BuildController().MarkNoteAsDone("Projects", "task.md");
+        Assert.IsType<OkObjectResult>(result);
+
+        var content = await File.ReadAllTextAsync(filePath);
+        Assert.Contains("- done", content);
+        Assert.Contains("done_at:", content);
+        // Body must be untouched
+        Assert.Contains("Do the thing.", content);
+    }
+
+    [Fact(DisplayName = "MarkNoteAsDone is idempotent — does not duplicate done tag")]
+    public async Task MarkNoteAsDone_Idempotent()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Projects");
+        Directory.CreateDirectory(catDir);
+        var filePath = Path.Combine(catDir, "task2.md");
+        await File.WriteAllTextAsync(filePath, "---\ntags:\n  - done\n---\n\nAlready done.\n");
+
+        await BuildController().MarkNoteAsDone("Projects", "task2.md");
+        var content = await File.ReadAllTextAsync(filePath);
+
+        var doneCount = System.Text.RegularExpressions.Regex.Matches(content, "- done").Count;
+        Assert.Equal(1, doneCount);
+    }
+
+    [Fact(DisplayName = "MarkNoteAsDone returns 404 when file does not exist")]
+    public async Task MarkNoteAsDone_Returns404_WhenNotFound()
+    {
+        Directory.CreateDirectory(Path.Combine(_vaultRoot, "Projects"));
+        var result = await BuildController().MarkNoteAsDone("Projects", "ghost.md");
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact(DisplayName = "AddDoneToFrontmatter prepends frontmatter when note has none")]
+    public void AddDoneToFrontmatter_HandlesMissingFrontmatter()
+    {
+        var content = "Just plain text without frontmatter.";
+        var result = TaxonomyController.AddDoneToFrontmatter(content);
+        Assert.Contains("tags:", result);
+        Assert.Contains("- done", result);
+        Assert.Contains("done_at:", result);
+        Assert.Contains("Just plain text without frontmatter.", result);
+    }
+
+    // ── HasDoneTag ────────────────────────────────────────────────────────────
+
+    [Fact(DisplayName = "HasDoneTag returns true when done tag is in frontmatter")]
+    public void HasDoneTag_ReturnsTrue_WhenDoneTagPresent()
+    {
+        var content = "---\ntags:\n  - work\n  - done\n---\n\nBody text\n";
+        Assert.True(TaxonomyController.HasDoneTag(content));
+    }
+
+    [Fact(DisplayName = "HasDoneTag returns false when done tag is not present")]
+    public void HasDoneTag_ReturnsFalse_WhenNotTagged()
+    {
+        var content = "---\ntags:\n  - work\n---\n\nBody text\n";
+        Assert.False(TaxonomyController.HasDoneTag(content));
+    }
+
+    [Fact(DisplayName = "HasDoneTag returns false for note with no frontmatter")]
+    public void HasDoneTag_ReturnsFalse_WhenNoFrontmatter()
+    {
+        Assert.False(TaxonomyController.HasDoneTag("Just body text."));
+    }
+    // ── SearchNotes ───────────────────────────────────────────────────────
+
+    [Fact(DisplayName = "SearchNotes returns note when query matches title (first heading)")]
+    public async Task SearchNotes_MatchesTitle()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Travel Planning");
+        Directory.CreateDirectory(catDir);
+        await File.WriteAllTextAsync(Path.Combine(catDir, "trip.md"),
+            "# here are my travel dates\n\nLeaving on March 15th.");
+
+        var results = await TaxonomyController.SearchNotes(_vaultRoot, "travel dates");
+
+        Assert.Single(results);
+        Assert.Equal("trip.md", results[0].Filename);
+        Assert.Equal("Travel Planning", results[0].Category);
+        Assert.Contains("travel dates", results[0].Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact(DisplayName = "SearchNotes returns note when query matches body text but not title")]
+    public async Task SearchNotes_MatchesBodyText()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Health");
+        Directory.CreateDirectory(catDir);
+        await File.WriteAllTextAsync(Path.Combine(catDir, "checkup.md"),
+            "# Annual Checkup\n\nCholesterol level: 185 mg/dL. Blood pressure normal.");
+
+        var results = await TaxonomyController.SearchNotes(_vaultRoot, "cholesterol");
+
+        Assert.Single(results);
+        Assert.Equal("checkup.md", results[0].Filename);
+    }
+
+    [Fact(DisplayName = "SearchNotes is case-insensitive")]
+    public async Task SearchNotes_IsCaseInsensitive()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Fitness");
+        Directory.CreateDirectory(catDir);
+        await File.WriteAllTextAsync(Path.Combine(catDir, "run.md"),
+            "Completed a 5km run this morning.");
+
+        var results = await TaxonomyController.SearchNotes(_vaultRoot, "5KM RUN");
+
+        Assert.Single(results);
+    }
+
+    [Fact(DisplayName = "SearchNotes returns empty list when no notes match")]
+    public async Task SearchNotes_ReturnsEmpty_WhenNoMatch()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Work");
+        Directory.CreateDirectory(catDir);
+        await File.WriteAllTextAsync(Path.Combine(catDir, "meeting.md"), "# Quarterly Review\n\nBudget discussed.");
+
+        var results = await TaxonomyController.SearchNotes(_vaultRoot, "xyzzy_no_match");
+
+        Assert.Empty(results);
+    }
+
+    [Fact(DisplayName = "SearchNotes excludes notes that have the done tag")]
+    public async Task SearchNotes_ExcludesDoneNotes()
+    {
+        var catDir = Path.Combine(_vaultRoot, "Projects");
+        Directory.CreateDirectory(catDir);
+        // Done note — should be hidden from search
+        await File.WriteAllTextAsync(Path.Combine(catDir, "completed_task.md"),
+            "---\ntags:\n  - done\n---\n\nThis project is about machine learning.");
+        // Active note — should appear
+        await File.WriteAllTextAsync(Path.Combine(catDir, "active_task.md"),
+            "# Machine learning research\n\nStill ongoing.");
+
+        var results = await TaxonomyController.SearchNotes(_vaultRoot, "machine learning");
+
+        Assert.Single(results);
+        Assert.Equal("active_task.md", results[0].Filename);
+    }
 }
 
 /// <summary>

@@ -36,6 +36,13 @@ interface SelectedNote {
   category: string
 }
 
+interface SearchResult {
+  category: string
+  filename: string
+  title: string
+  preview: string
+}
+
 interface CaptureQueueItem {
   id: string;
   text: string;
@@ -247,6 +254,8 @@ function App() {
   const activeCategoryFetchRef = useRef<string | null>(null)
   const [categoryNotes, setCategoryNotes] = useState<NotePreview[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
@@ -273,6 +282,11 @@ function App() {
 
   // Properties Panel State
   const [isPropertiesExpanded, setIsPropertiesExpanded] = useState(false)
+
+  // Completed notes State
+  const [completedNotes, setCompletedNotes] = useState<Array<{ filename: string; category: string; doneAt: string }>>([]);
+  const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
 
   // Quick-Add State
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
@@ -467,6 +481,33 @@ function App() {
       console.error('Failed to fetch taxonomy', err)
     }
   }
+
+  // Full-text search effect — debounced 300 ms
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null)
+      setIsSearching(false)
+      return
+    }
+    setIsSearching(true)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/taxonomy/search?q=${encodeURIComponent(searchQuery.trim())}`)
+        if (res.ok) {
+          const data: SearchResult[] = await res.json()
+          setSearchResults(data)
+        } else {
+          setSearchResults([])
+        }
+      } catch (err) {
+        console.error('Search failed', err)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, API_BASE_URL])
 
   // Queue Processing Effect
   useEffect(() => {
@@ -702,6 +743,56 @@ function App() {
     }
   }
 
+  const fetchCompletedNotes = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/taxonomy`);
+      if (!res.ok) return;
+      const cats = await res.json();
+      const done: Array<{ filename: string; category: string; doneAt: string }> = [];
+      for (const cat of cats) {
+        const notesRes = await fetch(`${API_BASE_URL}/api/taxonomy/${cat.name}/notes`);
+        if (!notesRes.ok) continue;
+        const notes = await notesRes.json();
+        for (const n of notes) {
+          const detailRes = await fetch(`${API_BASE_URL}/api/taxonomy/${cat.name}/notes/${n.filename}`);
+          if (!detailRes.ok) continue;
+          const detail = await detailRes.json();
+          const content: string = detail.content || '';
+          if (/tags:[\s\S]*?- done/.test(content)) {
+            const doneAtMatch = content.match(/done_at:\s*"?([^"\n]+)"?/);
+            done.push({ filename: n.filename, category: cat.name, doneAt: doneAtMatch?.[1] || '' });
+          }
+        }
+      }
+      done.sort((a, b) => b.doneAt.localeCompare(a.doneAt));
+      setCompletedNotes(done);
+    } catch (err) {
+      console.error('Failed to fetch completed notes', err);
+    }
+  }
+
+  const handleMarkAsDone = async () => {
+    if (!selectedNote) return;
+    if (!confirm('Mark this note as done? It will be moved to the Completed section.')) return;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
+        { method: 'PUT' }
+      );
+      if (res.ok) {
+        setSelectedNote(null);
+        await fetchTaxonomy();
+        if (selectedCategory) await handleSelectCategory(selectedCategory);
+        setIsCompletedExpanded(true);
+        await fetchCompletedNotes();
+      } else {
+        alert('Failed to mark note as done.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
 
 
   const handleMoveNote = async () => {
@@ -816,9 +907,12 @@ function App() {
   }
 
   const handleReanalyze = async () => {
-    if (!selectedNote) return
+    if (!selectedNote || isReanalyzing) return
+    setIsReanalyzing(true)
     setStatusMessage('Re-analyzing with AI Engine...')
 
+    const noteCategory = selectedNote.category;
+    const noteFilename = selectedNote.filename;
     let rawText = selectedNote.content;
     if (rawText.startsWith('---')) {
       const endMatch = rawText.indexOf('\n---');
@@ -828,7 +922,7 @@ function App() {
     }
 
     try {
-      await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}`, {
+      await fetch(`${API_BASE_URL}/api/taxonomy/${noteCategory}/notes/${noteFilename}`, {
         method: 'DELETE'
       })
 
@@ -840,13 +934,24 @@ function App() {
 
       if (response.ok) {
         const result = await response.json()
-        setSelectedNote(null)
         setStatusMessage('Analysis complete!')
         setLastCaptureDetails(result.details)
         await fetchTaxonomy()
-        if (selectedCategory) {
-          await handleSelectCategory(selectedCategory)
-        }
+        // Re-fetch the note — it may have a new filename or same name in same/different category
+        const newFilename: string = result.details?.suggestedFilename
+          ? result.details.suggestedFilename + '.md'
+          : noteFilename;
+        const newCategory: string = result.details?.targetCategory || noteCategory;
+        try {
+          const refreshRes = await fetch(`${API_BASE_URL}/api/taxonomy/${newCategory}/notes/${newFilename}`);
+          if (refreshRes.ok) {
+            const refreshed = await refreshRes.json();
+            setSelectedNote({ filename: refreshed.filename, content: refreshed.content, category: refreshed.category });
+            setSelectedCategory(refreshed.category);
+            const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${refreshed.category}/notes`);
+            if (catRes.ok) setCategoryNotes(await catRes.json());
+          }
+        } catch { /* stay on current note if refresh fails */ }
         setTimeout(() => setStatusMessage(''), 3000)
       } else {
         const err = await response.text()
@@ -855,6 +960,8 @@ function App() {
     } catch (error) {
       console.error(error)
       setStatusMessage('Network Error')
+    } finally {
+      setIsReanalyzing(false)
     }
   }
 
@@ -1163,73 +1270,170 @@ function App() {
 
         <nav className="sidebar-nav">
           <div className="taxonomy-list">
-            {taxonomies
-              .filter(cat => cat.name.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((cat) => (
-                <div key={cat.name} className="taxonomy-item-wrapper">
-                  <div
-                    className={`taxonomy-item ${selectedCategory === cat.name ? 'active' : ''}`}
-                    onClick={() => handleSelectCategory(cat.name)}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, cat.name)}
-                  >
-                    {isRenaming === cat.name ? (
-                      <input
-                        className="rename-input"
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onBlur={() => handleRename(cat.name)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleRename(cat.name)
-                          if (e.key === 'Escape') setIsRenaming(null)
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <div
-                        className="taxonomy-item-label"
-                        onDoubleClick={(e) => {
-                          e.stopPropagation()
-                          setIsRenaming(cat.name)
-                          setRenameValue(cat.name)
-                        }}
-                      >
-                        <span className="tax-icon">{getTaxonomyIcon(cat.name)}</span>
-                        <span className="tax-name">{cat.name.replace(/_/g, ' ')}</span>
+            {searchQuery.trim() ? (
+              /* ── Search Results Mode ─────────────────────────────── */
+              isSearching ? (
+                <div className="search-empty-state">Searching…</div>
+              ) : searchResults && searchResults.length === 0 ? (
+                <div className="search-empty-state">No results for "{searchQuery}"</div>
+              ) : searchResults ? (() => {
+                // Group results by category
+                const grouped: Record<string, SearchResult[]> = {};
+                searchResults.forEach(r => {
+                  if (!grouped[r.category]) grouped[r.category] = [];
+                  grouped[r.category].push(r);
+                });
+                return Object.entries(grouped).map(([cat, notes]) => (
+                  <div key={cat} className="taxonomy-item-wrapper">
+                    <div className="taxonomy-item search-result-category">
+                      <div className="taxonomy-item-label">
+                        <span className="tax-icon">{getTaxonomyIcon(cat)}</span>
+                        <span className="tax-name">{cat.replace(/_/g, ' ')}</span>
                       </div>
-                    )}
-                    <span className="badge">{cat.noteCount}</span>
-                  </div>
-
-                  {selectedCategory === cat.name && (
+                      <span className="badge">{notes.length}</span>
+                    </div>
                     <div className="notes-list">
-                      {categoryNotes
-                        .filter(n => n.filename.toLowerCase().includes(searchQuery.toLowerCase()))
-                        .map(n => (
-                          <div
-                            key={n.filename}
-                            className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, n.filename, cat.name)}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleSelectNote(n.filename)
-                            }}
-                          >
-                            <div className="note-dot"></div>
-                            <div className="note-content">
-                              <div className="note-title">
-                                {getDisplayTitle(n.preview, n.filename)}
+                      {notes.map(n => (
+                        <div
+                          key={n.filename}
+                          className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedCategory(cat)
+                            activeCategoryFetchRef.current = cat
+                            handleSelectNote(n.filename)
+                          }}
+                        >
+                          <div className="note-dot"></div>
+                          <div className="note-content">
+                            <div className="note-title">{n.title || n.filename.replace('.md', '')}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })() : null
+            ) : (
+              /* ── Normal Taxonomy Mode ────────────────────────────── */
+              taxonomies
+                .map((cat) => (
+                  <div key={cat.name} className="taxonomy-item-wrapper">
+                    <div
+                      className={`taxonomy-item ${selectedCategory === cat.name ? 'active' : ''}`}
+                      onClick={() => handleSelectCategory(cat.name)}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, cat.name)}
+                    >
+                      {isRenaming === cat.name ? (
+                        <input
+                          className="rename-input"
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => handleRename(cat.name)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRename(cat.name)
+                            if (e.key === 'Escape') setIsRenaming(null)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div
+                          className="taxonomy-item-label"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            setIsRenaming(cat.name)
+                            setRenameValue(cat.name)
+                          }}
+                        >
+                          <span className="tax-icon">{getTaxonomyIcon(cat.name)}</span>
+                          <span className="tax-name">{cat.name.replace(/_/g, ' ')}</span>
+                        </div>
+                      )}
+                      <span className="badge">{cat.noteCount}</span>
+                    </div>
+
+                    {selectedCategory === cat.name && (
+                      <div className="notes-list">
+                        {categoryNotes
+                          .map(n => (
+                            <div
+                              key={n.filename}
+                              className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, n.filename, cat.name)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSelectNote(n.filename)
+                              }}
+                            >
+                              <div className="note-dot"></div>
+                              <div className="note-content">
+                                <div className="note-title">
+                                  {getDisplayTitle(n.preview, n.filename)}
+                                </div>
                               </div>
                             </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+            )}
+          </div>
+
+
+          {/* Completed Section */}
+          <div className="completed-section">
+            <div
+              className="completed-header taxonomy-item"
+              onClick={() => {
+                if (!isCompletedExpanded) fetchCompletedNotes();
+                setIsCompletedExpanded(p => !p);
+              }}
+            >
+              <div className="taxonomy-item-label">
+                <span className="tax-icon">✓</span>
+                <span className="tax-name">Completed</span>
+              </div>
+              <span className="badge">{completedNotes.length}</span>
+            </div>
+            {isCompletedExpanded && (
+              <div className="notes-list">
+                {completedNotes.length === 0 ? (
+                  <div className="note-item" style={{ opacity: 0.5, pointerEvents: 'none' }}>
+                    <div className="note-content"><div className="note-title">No completed notes</div></div>
+                  </div>
+                ) : (
+                  completedNotes.map(n => (
+                    <div
+                      key={n.filename}
+                      className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
+                      onClick={() => {
+                        setSelectedCategory(n.category);
+                        activeCategoryFetchRef.current = n.category;
+                        fetch(`${API_BASE_URL}/api/taxonomy/${n.category}/notes/${n.filename}`)
+                          .then(r => r.json())
+                          .then(d => setSelectedNote({ filename: d.filename, content: d.content, category: d.category }))
+                          .catch(console.error);
+                      }}
+                    >
+                      <div className="note-dot" style={{ background: 'var(--c-ai-accent)' }}></div>
+                      <div className="note-content">
+                        <div className="note-title">{n.filename.replace('.md', '').replace(/_/g, ' ')}</div>
+                        {n.doneAt && (
+                          <div className="note-date" style={{ fontSize: '0.7rem', opacity: 0.5 }}>
+                            {new Date(n.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </div>
-                        ))}
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </nav>
       </aside>
@@ -1317,9 +1521,16 @@ function App() {
 
                     <div className="editor-action-bar">
                       <span className="editor-meta">{isSaving ? 'Saving...' : 'Saved'}</span>
-                      <button className="btn btn-outline-amber" onClick={handleReanalyze}>
-                        <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
-                        Re-analyze
+                      <button
+                        className="btn btn-outline-amber btn-reanalyze"
+                        onClick={handleReanalyze}
+                        disabled={isReanalyzing}
+                        title="Re-analyze"
+                      >
+                        <span className="material-icons" style={{ fontSize: '16px' }}>
+                          {isReanalyzing ? 'sync' : 'auto_awesome'}
+                        </span>
+                        <span className="reanalyze-label">Re-analyze</span>
                       </button>
                     </div>
                   </div>
@@ -1460,7 +1671,8 @@ function App() {
                     </select>
                     <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
                   </div>
-                  <div className="action-group" style={{ marginLeft: 'auto' }}>
+                  <div className="action-group" style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
                     <button className="btn btn-warning" onClick={handleDeleteNote}>Delete</button>
                   </div>
                 </div>

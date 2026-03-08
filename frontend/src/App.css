@@ -126,6 +126,17 @@ body {
   background-color: rgba(0, 0, 0, 0.3);
 }
 
+.search-empty-state {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  border: 1px dashed var(--c-border);
+  margin-top: 8px;
+}
+
 .sidebar-title {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -1227,6 +1238,54 @@ body {
 .btn-outline-amber:hover {
   background: rgba(201, 151, 74, 0.1);
 }
+
+/* Icon-only Re-analyze button with hover-reveal text label */
+.btn-reanalyze .reanalyze-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 0.2s ease, opacity 0.2s ease, margin-left 0.2s ease;
+  margin-left: 0;
+}
+
+.btn-reanalyze:hover .reanalyze-label {
+  max-width: 80px;
+  opacity: 1;
+  margin-left: 4px;
+}
+
+/* Mark as Done button */
+.btn-done {
+  background: transparent;
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.4);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s;
+}
+
+.btn-done:hover {
+  background: rgba(63, 185, 80, 0.08);
+  border-color: rgba(63, 185, 80, 0.7);
+}
+
+/* Completed sidebar section */
+.completed-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border);
+}
+
+.completed-header {
+  cursor: pointer;
+}
+
 
 .editor-right-panel {
   width: 320px;

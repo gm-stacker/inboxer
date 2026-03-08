@@ -30,7 +30,7 @@ namespace Backend.Controllers
                 return BadRequest("Messages cannot be empty");
 
             var latestMessage = request.Messages[request.Messages.Count - 1].Content;
-            var vaultContext = await GetVaultContextAsync();
+            var vaultContext = await GetVaultContextAsync(latestMessage);
 
             var systemPrompt = @"CRITICAL INSTRUCTION: Your primary job is to add expertise and insight that is NOT already in the user's notes. Never restate or summarise what the user has already written. If you find yourself writing something the user could have read directly from their own notes, stop and replace it with genuine domain knowledge instead.
 
@@ -148,11 +148,14 @@ User Query:
             }
         }
 
-        private async Task<string> GetVaultContextAsync()
+        private async Task<string> GetVaultContextAsync(string? userQuery = null)
         {
             try
             {
                 if (!Directory.Exists(_vaultPath)) return string.Empty;
+
+                // Determine if the user's query is asking for historical/completed information
+                bool includeCompleted = IsHistoricalQuery(userQuery);
 
                 var files = Directory.GetFiles(_vaultPath, "*.md", SearchOption.AllDirectories);
                 var notesContext = new System.Collections.Generic.List<string>();
@@ -162,6 +165,11 @@ User Query:
                     var fileInfo = new FileInfo(file);
                     var categoryFolder = fileInfo.Directory?.Name ?? "Unknown";
                     var content = await System.IO.File.ReadAllTextAsync(file);
+
+                    // Skip completed notes unless the query explicitly requests historical data
+                    if (!includeCompleted && Backend.Controllers.TaxonomyController.HasDoneTag(content))
+                        continue;
+
                     var lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
                     notesContext.Add($"--- File: {categoryFolder}/{Path.GetFileName(file)} | Last Modified: {lastModified} ---\n{content}\n");
                 }
@@ -173,6 +181,30 @@ User Query:
                 return string.Empty;
             }
         }
+
+        /// <summary>
+        /// Returns true if the query appears to be requesting historical or completed note data.
+        /// Heuristic only — errs on the side of inclusion to avoid missing relevant context.
+        /// </summary>
+        private static bool IsHistoricalQuery(string? query)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return false;
+            var lower = query.ToLowerInvariant();
+            return lower.Contains("histor") ||
+                   lower.Contains("complet") ||
+                   lower.Contains("done") ||
+                   lower.Contains("finish") ||
+                   lower.Contains("last month") ||
+                   lower.Contains("last year") ||
+                   lower.Contains("january") || lower.Contains("february") || lower.Contains("march") ||
+                   lower.Contains("april") || lower.Contains("may") || lower.Contains("june") ||
+                   lower.Contains("july") || lower.Contains("august") || lower.Contains("september") ||
+                   lower.Contains("october") || lower.Contains("november") || lower.Contains("december") ||
+                   lower.Contains("past") ||
+                   lower.Contains("previously") ||
+                   lower.Contains("archive");
+        }
+
     }
 
     public class AdvancedQueryRequest
