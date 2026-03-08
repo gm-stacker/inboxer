@@ -21,6 +21,16 @@ namespace Backend.Controllers
             }
         }
 
+        // For unit testing isolated vaults
+        protected TaxonomyController(string vaultPath)
+        {
+            _vaultPath = vaultPath;
+            if (!Directory.Exists(_vaultPath))
+            {
+                Directory.CreateDirectory(_vaultPath);
+            }
+        }
+
         [HttpGet]
         public IActionResult GetTaxonomy()
         {
@@ -132,10 +142,28 @@ namespace Backend.Controllers
         public async Task<IActionResult> GetNoteDetails(string category, string filename)
         {
             var filePath = Path.Combine(_vaultPath, category, filename);
-            if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
+            if (System.IO.File.Exists(filePath))
+            {
+                var content = await System.IO.File.ReadAllTextAsync(filePath);
+                return Ok(new { Filename = filename, Content = content, Category = category });
+            }
 
-            var content = await System.IO.File.ReadAllTextAsync(filePath);
-            return Ok(new { Filename = filename, Content = content, Category = category });
+            // Fuzzy fallback: search entire vault case-insensitively by filename
+            var allFiles = Directory.GetFiles(_vaultPath, "*.md", SearchOption.AllDirectories);
+            var fuzzyMatch = allFiles.FirstOrDefault(f =>
+                string.Equals(Path.GetFileName(f), filename, StringComparison.OrdinalIgnoreCase) ||
+                Path.GetFileNameWithoutExtension(f).Contains(
+                    Path.GetFileNameWithoutExtension(filename), StringComparison.OrdinalIgnoreCase));
+
+            if (fuzzyMatch != null)
+            {
+                var content = await System.IO.File.ReadAllTextAsync(fuzzyMatch);
+                var actualCategory = Path.GetFileName(Path.GetDirectoryName(fuzzyMatch) ?? string.Empty);
+                var actualFilename = Path.GetFileName(fuzzyMatch);
+                return Ok(new { Filename = actualFilename, Content = content, Category = actualCategory });
+            }
+
+            return NotFound("Note not found.");
         }
 
         [HttpPut("{category}/notes/{filename}")]

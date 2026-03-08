@@ -57,15 +57,15 @@ description: Use this skill for any frontend work in the React app — CSS chang
 Maintain visual consistency across all UI components. Every frontend change must conform to this design system exactly. Never introduce new colours, fonts, or spacing values not defined here.
 
 ## Colour tokens — use these exact values, no others
-- `--bg-base`: `#0D0D0D` — page background
-- `--bg-surface`: `#141414` — cards, modals, panels
-- `--bg-raised`: `#1A1A1A` — active states, toast backgrounds
-- `--bg-hover`: `#161616` — hover states
-- `--border`: `#2A2A2A` — all dividers and borders
-- `--text-primary`: `#F0F0F0`
-- `--text-secondary`: `#6B6B6B`
-- `--text-muted`: `#3D3D3D`
-- `--ai-accent`: `#C9974A` — amber, used ONLY for AI-generated content
+- `--bg-base`: `#0b111e` — page background
+- `--bg-surface`: `#0f172a` — sidebar, cards, modals, panels
+- `--bg-raised`: `#1e293b` — chat bubbles, skeletons, hover states, tag chips
+- `--bg-hover`: `rgba(255, 255, 255, 0.03)` — subtle row hover states
+- `--border`: `#1e293b` — all dividers and drawer edges
+- `--text-primary`: `#F8FAFC`
+- `--text-secondary`: `#94a3b8` — muted text
+- `--ui-accent`: `#6366f1` — primary UI interactive elements (indigo)
+- `--ai-accent`: `#c9974a` — amber, used ONLY for AI-generated content
 - `--destructive`: `#C0392B`
 
 ## AI accent rule — critical
@@ -89,7 +89,7 @@ Never use amber for user-generated content, headings, navigation, or decorative 
 
 ## Spacing and layout
 - Border radius: 8px on all components consistently
-- Sidebar width: 240px fixed
+- Sidebar width: 260px fixed
 - Right panel width: 320px
 - Modal width: 640px, max-height 80vh
 - No drop shadows except modals: `0 4px 24px rgba(0,0,0,0.4)`

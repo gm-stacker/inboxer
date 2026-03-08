@@ -20,7 +20,7 @@ namespace Backend.Controllers
         public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config)
         {
             _gemini = gemini;
-            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
         }
 
         [HttpPost]
@@ -82,17 +82,24 @@ Rules:
 
 - Use [TABLE] blocks for: time-series data (sleep logs, weight, mood over days), comparisons, ranked lists, or any repeating structured data across notes.
 - Each [TABLE] block should have a plain-language caption immediately above it (e.g. ""Here is your sleep over the past week:"").
-- **CRITICAL REQUIREMENT**: You MUST include a final column named exactly `Source File` in EVERY table. The value MUST be an EXACT copy-paste of the path shown in the `--- File: path/to/file.md | Last Modified... ---` header, including the exact folder (Category) and filename. Do not guess the category. Do not omit this under any circumstances.
+- **CRITICAL REQUIREMENT — SOURCE FILE**: You MUST include a final column named exactly `Source File` in EVERY table. The value MUST be an **EXACT verbatim copy-paste** of the path from the `--- File: ExactCategory/ExactFilename.md | Last Modified... ---` header above the note content. Do NOT shorten, rename, reformat, or invent the path — copy it character-for-character. For example if the header says `--- File: Travel_Planning/March2026TravelItinerary.md ---` write exactly `Travel_Planning/March2026TravelItinerary.md`. Never construct a path from the note's topic or content.
 - After tables, add a brief ""Patterns & Suggestions"" section if the data reveals anything notable.
   - **IMPORTANT**: If your Patterns & Suggestions section does not contain at least one fact, threshold, regulation, or consideration that is NOT mentioned anywhere in the user's notes, rewrite it until it does. Use the notes as raw data to reason from, not content to summarise back.
 - If the notes do not contain enough data to answer the question, say so clearly and specify what kind of notes would help.
-- **STRICT ANTI-HALLUCINATION**: You must NEVER create a table row for a date or data point that does not explicitly exist in the provided notes. When extracting data points or metrics (like amounts, dosages, times), you MUST quote the EXACT figures found in the notes. Do not round, assume, or hallucinate different numbers. Do not interpolate, do not fill in missing days, and do not guess. If there is no note for a specific day, skip it entirely. Every single row MUST trace back to a real `Source File`.
+- **STRICT ANTI-HALLUCINATION — APPLIES TO EVERY WORD OF YOUR RESPONSE**: Every destination, date, event, product, name, number, or fact you mention MUST exist verbatim in the provided notes. Do not infer, extrapolate, or assume anything that is not explicitly stated. If a place, trip, or event is not in the notes, do NOT mention it under any circumstances — not even as a suggestion or speculation. This applies equally to the prose summary, the tables, and the Patterns & Suggestions section. If the notes do not contain enough data to answer, say so and specify what kind of notes would help.
+- **STRICT ANTI-HALLUCINATION — TABLES**: You must NEVER create a table row for a date or data point that does not explicitly exist in the provided notes. When extracting data points or metrics (like amounts, dosages, times), you MUST quote the EXACT figures found in the notes. Do not round, assume, or hallucinate different numbers. Do not interpolate, do not fill in missing days, and do not guess. If there is no note for a specific day, skip it entirely. Every single row MUST trace back to a real `Source File`.
 - Dates should always be rendered as human-readable (e.g. ""Thu 5 Mar"") not ISO format.
 - Use explicit dates mentioned in text, the filename, or the 'Last Modified' metadata to resolve relative times like 'yesterday' or 'tonight'. Pay close attention to the system's current date below.
 - Extract metric values from both the note body and the frontmatter `metrics` field.
+- **MANDATORY SOURCES**: Every response MUST end with a `[SOURCES]` block listing every note file you referenced, in this exact format:
+[SOURCES]
+- Category/Filename.md
+- Category/Filename2.md
+[/SOURCES]
+If you did not reference any specific note, write `[SOURCES]\nNo notes found.\n[/SOURCES]`. The [SOURCES] block MUST appear as the very last thing inside the `summary` JSON field.
 - Your entire response MUST be returned as a JSON object matching this schema:
 {
-  ""summary"": ""Your full response including prose, [TABLE] blocks, and Patterns & Suggestions""";
+  ""summary"": ""Your full response including prose, [TABLE] blocks, Patterns & Suggestions, and mandatory [SOURCES] block""";
 
             if (request.Mode == "temporal")
             {

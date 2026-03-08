@@ -22,7 +22,7 @@ namespace Backend.Controllers
         public ChatController(IGeminiService gemini, IConfiguration config)
         {
             _gemini = gemini;
-            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
         }
 
         [HttpPost]
