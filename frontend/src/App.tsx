@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactElement } from 'react';
 import type { FormEvent } from 'react';
 import './App.css'
 
@@ -102,6 +102,96 @@ const parseNoteContent = (content: string) => {
     return { props, body };
   }
   return { props: {} as Record<string, any>, body: content };
+};
+
+// Parses [TABLE] and [SOURCES] blocks from query summary into React elements
+const parseQuerySummary = (
+  text: string,
+  onSourceClick: (f: string) => void
+): ReactElement => {
+  if (!text) return <></>;
+
+  const elements: ReactElement[] = [];
+  // Split on [TABLE]...[/TABLE] and [SOURCES]...[/SOURCES]
+  const parts = text.split(/(\[TABLE\][\s\S]*?\[\/TABLE\]|\[SOURCES\][\s\S]*?\[\/SOURCES\])/g);
+
+  parts.forEach((part, i) => {
+    if (part.startsWith('[TABLE]') && part.endsWith('[/TABLE]')) {
+      const inner = part.slice(7, -8).trim();
+      const lines = inner.split('\n').filter(l => l.trim().startsWith('|'));
+      if (lines.length < 2) { elements.push(<p key={i}>{inner}</p>); return; }
+
+      const headers = lines[0].split('|').map(h => h.trim()).filter(Boolean);
+      const rows = lines.slice(2).map(l => l.split('|').map(c => c.trim()).filter(Boolean));
+      const sourceColIdx = headers.findIndex(h => h.toLowerCase().includes('source'));
+
+      elements.push(
+        <div key={i} className="query-table-wrapper">
+          <table className="query-table">
+            <thead>
+              <tr>{headers.map((h, j) => <th key={j}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci}>
+                      {ci === sourceColIdx && cell && cell !== '—' ? (
+                        <button className="source-link-btn" onClick={() => onSourceClick(cell)}>
+                          📄 {cell}
+                        </button>
+                      ) : cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    } else if (part.startsWith('[SOURCES]') && part.endsWith('[/SOURCES]')) {
+      const inner = part.slice(9, -10).trim();
+      const files = inner.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(f => f && f !== 'No notes found.');
+      if (files.length === 0) return;
+      elements.push(
+        <div key={i} className="query-sources">
+          <div className="sources-label">📚 Sources referenced</div>
+          {files.map((f, fi) => (
+            <button key={fi} className="source-link-btn" onClick={() => onSourceClick(f)}>
+              📄 {f}
+            </button>
+          ))}
+        </div>
+      );
+    } else if (part.trim()) {
+      // Plain text — split on ### headings for light formatting
+      const textParts = part.split(/(###[^\n]+)/g);
+      textParts.forEach((tp, ti) => {
+        if (tp.startsWith('###')) {
+          elements.push(<h4 key={`${i}-${ti}`} className="query-section-heading">{tp.replace('###', '').trim()}</h4>);
+        } else if (tp.trim()) {
+          // Add line breaks before bullet points (- ) for better readability
+          let formattedText = tp;
+          formattedText = formattedText.replace(/(?<!^)( - )/g, '\n\n- ');
+          formattedText = formattedText.replace(/\n- /g, '\n\n- ');
+
+          // Convert any bare Category/Filename.md references into clickable links
+          const linkParts = formattedText.split(/\b([A-Z][a-zA-Z_]+\/[^\s,|]+\.md)\b/g);
+          elements.push(
+            <p key={`${i}-${ti}`} style={{ whiteSpace: 'pre-wrap' }}>
+              {linkParts.map((lp, li) =>
+                lp.match(/^[A-Z][a-zA-Z_]+\/[^\s,|]+\.md$/) ? (
+                  <button key={li} className="source-link-btn inline" onClick={() => onSourceClick(lp)}>📄 {lp}</button>
+                ) : lp
+              )}
+            </p>
+          );
+        }
+      });
+    }
+  });
+
+  return <>{elements}</>;
 };
 
 const joinNoteContent = (props: Record<string, any>, body: string) => {
@@ -524,15 +614,21 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         setSelectedNote({ filename: data.filename, content: data.content, category: data.category });
+        // Update to actual category returned by fuzzy search
+        if (data.category !== categoryName) setSelectedCategory(data.category);
         setDynamicEchoes(null);
         setIsPropertiesExpanded(false);
       } else {
-        alert(`Failed to load note: ${sourceFile}.It may have been moved or deleted.`);
         setSelectedNote(null);
+        // Show toast with Obsidian fallback — don't use alert()
+        const obsidianUri = `obsidian://search?query=${encodeURIComponent(filename.replace('.md', ''))}`;
+        setToastFlags(prev => [...prev, {
+          id: `note-404-${Date.now()}`,
+          message: `📄 Note not found in app: ${sourceFile} — [Open in Obsidian](${obsidianUri})`
+        }]);
       }
     } catch (err) {
       console.error('Failed to fetch source file note', err);
-      alert(`Failed to load note: ${sourceFile}.Network error.`);
       setSelectedNote(null);
     }
 
@@ -1195,212 +1291,259 @@ function App() {
           </div>
         )}
 
-        <div className="center-container">
+        <div className={`center-container ${selectedNote ? 'three-column-mode' : ''}`}>
           {selectedNote ? (
             /* --- NOTE EDITOR --- */
-            <div className="note-editor">
-              <header className="editor-header">
-                <div className="editor-breadcrumbs">
-                  <button
-                    className="back-btn"
-                    onClick={() => setSelectedNote(null)}
-                    title="Back to home"
-                  >
-                    <span className="material-icons" style={{ fontSize: '20px' }}>arrow_back</span>
-                  </button>
-                  <span>Projects</span>
-                  <span>/</span>
-                  <span>{selectedNote.category}</span>
+            <>
+              <div className="note-editor">
+                <header className="editor-header">
+                  <div className="editor-breadcrumbs">
+                    <button
+                      className="back-btn"
+                      onClick={() => setSelectedNote(null)}
+                      title="Back to home"
+                    >
+                      <span className="material-icons" style={{ fontSize: '20px' }}>arrow_back</span>
+                    </button>
+                    <span>Projects</span>
+                    <span>/</span>
+                    <span>{selectedNote.category}</span>
+                  </div>
+
+                  <div className="editor-title-row">
+                    <h2 className="editor-title">
+                      {getDisplayTitle(selectedNote.content, selectedNote.filename)}
+                    </h2>
+
+                    <div className="editor-action-bar">
+                      <span className="editor-meta">{isSaving ? 'Saving...' : 'Saved'}</span>
+                      <button className="btn btn-outline-amber" onClick={handleReanalyze}>
+                        <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
+                        Re-analyze
+                      </button>
+                    </div>
+                  </div>
+                </header>
+
+                {/* Inline Editor */}
+
+                {/* Hidden file input for note editor */}
+                <input
+                  type="file"
+                  ref={noteFileInputRef}
+                  style={{ display: 'none' }}
+                  accept="image/*,application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleNoteFileSelect(file);
+                    e.target.value = '';
+                  }}
+                />
+
+                <div className="editor-toolbar">
+                  <div className="toolbar-group">
+                    <span className="material-icons toolbar-icon">undo</span>
+                    <span className="material-icons toolbar-icon">redo</span>
+                  </div>
+                  <div className="toolbar-group">
+                    <span className="material-icons toolbar-icon">format_bold</span>
+                    <span className="material-icons toolbar-icon">format_italic</span>
+                    <span className="material-icons toolbar-icon">format_underlined</span>
+                    <span className="material-icons toolbar-icon">strikethrough_s</span>
+                  </div>
+                  <div className="toolbar-group">
+                    <span className="material-icons toolbar-icon">link</span>
+                    <span className="material-icons toolbar-icon">code</span>
+                    <span className="material-icons toolbar-icon">format_list_bulleted</span>
+                    <span className="material-icons toolbar-icon">checklist_rtl</span>
+                  </div>
+                  <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
+                    <span
+                      className="material-icons toolbar-icon"
+                      title="Attach file"
+                      onClick={() => noteFileInputRef.current?.click()}
+                      style={{ cursor: 'pointer' }}
+                    >attach_file</span>
+                    {isUploadingToNote && <span className="toolbar-uploading">uploading...</span>}
+                  </div>
                 </div>
 
-                <h2 style={{
-                  fontSize: '20px',
-                  fontWeight: 'normal',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}>
-                  {getDisplayTitle(selectedNote.content, selectedNote.filename)}
-                </h2>
+                <div className="inline-editor">
+                  {(() => {
+                    const { props, body } = parseNoteContent(selectedNote.content);
+                    const chunks = body.split(/(!\[\[.*?\]\])/g);
 
-                <div className="editor-meta">
-                  {isSaving ? 'Saving...' : 'Saved'}
-                </div>
-              </header>
+                    return chunks.map((chunk, i) => {
+                      if (chunk.startsWith('![[') && chunk.endsWith(']]')) {
+                        const imgName = chunk.slice(3, -2);
+                        let imgUrl = `${API_BASE_URL}/api/capture/media/${encodeURIComponent(selectedNote.category)}/${encodeURIComponent(imgName)}`;
 
-              {/* Inline Editor */}
+                        if (imgName.toLowerCase().endsWith('.heic')) {
+                          imgUrl += '.jpg';
+                        }
 
-              {/* Hidden file input for note editor */}
-              <input
-                type="file"
-                ref={noteFileInputRef}
-                style={{ display: 'none' }}
-                accept="image/*,application/pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleNoteFileSelect(file);
-                  e.target.value = '';
-                }}
-              />
-
-              <div className="editor-toolbar">
-                <div className="toolbar-group">
-                  <span className="material-icons toolbar-icon">undo</span>
-                  <span className="material-icons toolbar-icon">redo</span>
-                </div>
-                <div className="toolbar-group">
-                  <span className="material-icons toolbar-icon">format_bold</span>
-                  <span className="material-icons toolbar-icon">format_italic</span>
-                  <span className="material-icons toolbar-icon">format_underlined</span>
-                  <span className="material-icons toolbar-icon">strikethrough_s</span>
-                </div>
-                <div className="toolbar-group">
-                  <span className="material-icons toolbar-icon">link</span>
-                  <span className="material-icons toolbar-icon">code</span>
-                  <span className="material-icons toolbar-icon">format_list_bulleted</span>
-                  <span className="material-icons toolbar-icon">checklist_rtl</span>
-                </div>
-                <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
-                  <span
-                    className="material-icons toolbar-icon"
-                    title="Attach file"
-                    onClick={() => noteFileInputRef.current?.click()}
-                    style={{ cursor: 'pointer' }}
-                  >attach_file</span>
-                  {isUploadingToNote && <span className="toolbar-uploading">uploading...</span>}
-                </div>
-              </div>
-
-              <div className="inline-editor">
-                {(() => {
-                  const { props, body } = parseNoteContent(selectedNote.content);
-                  const chunks = body.split(/(!\[\[.*?\]\])/g);
-
-                  return chunks.map((chunk, i) => {
-                    if (chunk.startsWith('![[') && chunk.endsWith(']]')) {
-                      const imgName = chunk.slice(3, -2);
-                      let imgUrl = `${API_BASE_URL}/api/capture/media/${encodeURIComponent(selectedNote.category)}/${encodeURIComponent(imgName)}`;
-
-                      if (imgName.toLowerCase().endsWith('.heic')) {
-                        imgUrl += '.jpg';
+                        return (
+                          <div key={i} className="inline-image-wrapper">
+                            <input
+                              className="inline-image-syntax"
+                              value={chunk}
+                              style={{ display: 'none' }} // Hidden as requested by the user
+                              onChange={() => { }}
+                            />
+                            <img
+                              src={imgUrl}
+                              alt={imgName}
+                              onClick={() => window.open(imgUrl, '_blank')}
+                            />
+                            <button
+                              className="delete-image-overlay"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newChunks = [...chunks];
+                                newChunks[i] = ''; // Set chunk to empty string to remove it
+                                setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
+                              }}
+                              title="Remove Image"
+                            >
+                              <span className="material-icons" style={{ fontSize: '18px' }}>close</span>
+                            </button>
+                          </div>
+                        );
                       }
 
+                      // Normal Text Chunk
                       return (
-                        <div key={i} className="inline-image-wrapper">
-                          <input
-                            className="inline-image-syntax"
-                            value={chunk}
-                            style={{ display: 'none' }} // Hidden as requested by the user
-                            onChange={() => { }}
-                          />
-                          <img
-                            src={imgUrl}
-                            alt={imgName}
-                            onClick={() => window.open(imgUrl, '_blank')}
-                          />
-                          <button
-                            className="delete-image-overlay"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const newChunks = [...chunks];
-                              newChunks[i] = ''; // Set chunk to empty string to remove it
-                              setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
-                            }}
-                            title="Remove Image"
-                          >
-                            <span className="material-icons" style={{ fontSize: '18px' }}>close</span>
-                          </button>
-                        </div>
+                        <textarea
+                          key={i}
+                          className="editor-textarea chunked-textarea"
+                          value={chunk}
+                          ref={(el) => {
+                            if (el) {
+                              el.style.height = '0px';
+                              el.style.height = el.scrollHeight + 'px';
+                            }
+                          }}
+                          onChange={(e) => {
+                            e.target.style.height = '0px';
+                            e.target.style.height = e.target.scrollHeight + 'px';
+                            const newChunks = [...chunks];
+                            newChunks[i] = e.target.value;
+                            setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
+                          }}
+                          onPaste={(e) => {
+                            const files = e.clipboardData.files;
+                            if (files && files.length > 0) {
+                              e.preventDefault();
+                              const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
+                              handleNoteFileUpload(files[0], i, cursorPos);
+                            }
+                          }}
+                          style={{ overflow: 'hidden', resize: 'none' }}
+                          placeholder={i === 0 ? "Start writing..." : ""}
+                        />
                       );
-                    }
+                    });
+                  })()}
+                </div>
 
-                    // Normal Text Chunk
-                    return (
-                      <textarea
-                        key={i}
-                        className="editor-textarea chunked-textarea"
-                        value={chunk}
-                        ref={(el) => {
-                          if (el) {
-                            el.style.height = '0px';
-                            el.style.height = el.scrollHeight + 'px';
-                          }
-                        }}
-                        onChange={(e) => {
-                          e.target.style.height = '0px';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                          const newChunks = [...chunks];
-                          newChunks[i] = e.target.value;
-                          setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
-                        }}
-                        onPaste={(e) => {
-                          const files = e.clipboardData.files;
-                          if (files && files.length > 0) {
-                            e.preventDefault();
-                            const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
-                            handleNoteFileUpload(files[0], i, cursorPos);
-                          }
-                        }}
-                        style={{ overflow: 'hidden', resize: 'none' }}
-                        placeholder={i === 0 ? "Start writing..." : ""}
-                      />
-                    );
-                  });
-                })()}
+                <div className="editor-actions">
+                  <div className="move-group">
+                    <select
+                      className="editor-select"
+                      value={moveToCategory}
+                      onChange={(e) => setMoveToCategory(e.target.value)}
+                    >
+                      <option value="">Move to...</option>
+                      {taxonomies.map(cat => (
+                        <option key={cat.name} value={cat.name}>{cat.name}</option>
+                      ))}
+                    </select>
+                    <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
+                  </div>
+                  <div className="action-group" style={{ marginLeft: 'auto' }}>
+                    <button className="btn btn-warning" onClick={handleDeleteNote}>Delete</button>
+                  </div>
+                </div>
               </div>
 
-              {/* Note Properties (Frontmatter) */}
-              {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
-                <div className="note-properties" style={{ marginTop: '24px' }}>
-                  <div
-                    className="properties-header"
-                    onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}
-                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                  >
-                    <span className="material-icons">list_alt</span>
-                    Properties {isPropertiesExpanded ? '▾' : '▸'}
-                  </div>
-                  {isPropertiesExpanded && (
-                    <div className="properties-grid">
-                      {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
-                        <div key={key} className="property-row">
-                          <span className="property-key">{key}</span>
-                          <span className="property-value">
-                            {Array.isArray(value) ? (
-                              <div className="property-tags">
-                                {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
-                              </div>
-                            ) : value}
-                          </span>
+              {/* --- RIGHT PANEL (Phase 3b) --- */}
+              <aside className="editor-right-panel">
+                <div className="right-panel-header">
+                  <span className="sparkle-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
+                  <h4>MEMORY ECHOES</h4>
+                </div>
+                <div className="right-panel-content">
+                  {isGeneratingEchoes ? (
+                    <div className="echoes-skeleton-state">
+                      <div className="echo-card skeleton"></div>
+                      <div className="echo-card skeleton" style={{ animationDelay: '0.15s' }}></div>
+                      <div className="echo-card skeleton" style={{ animationDelay: '0.3s' }}></div>
+                      <button className="btn btn-outline-amber" disabled style={{ width: '100%', justifyContent: 'center', marginTop: '16px', opacity: 0.5 }}>
+                        <span className="material-icons spin" style={{ fontSize: '16px' }}>sync</span>
+                        Synthesizing...
+                      </button>
+                    </div>
+                  ) : !dynamicEchoes ? (
+                    <div className="echoes-empty-state">
+                      <p className="echoes-prompt">Synthesize related memories across your vault.</p>
+                      <button
+                        className="btn btn-outline-amber"
+                        onClick={handleGenerateEchoes}
+                        style={{ justifyContent: 'center', marginTop: '16px', width: '100%' }}
+                      >
+                        <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
+                        Synthesize Echoes
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="echoes-list-ui">
+                      {dynamicEchoes.map((line, i) => (
+                        <div key={i} className="echo-card">
+                          <div className="echo-card-text">{line.replace(/^- /, '')}</div>
                         </div>
                       ))}
+                      <button
+                        className="btn btn-outline-amber"
+                        onClick={handleGenerateEchoes}
+                        style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }}
+                      >
+                        <span className="material-icons" style={{ fontSize: '16px' }}>refresh</span>
+                        Refresh Echoes
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Note Properties Sidebar Section */}
+                  {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
+                    <div className="right-panel-properties" style={{ marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--c-border)' }}>
+                      <div
+                        className="properties-header"
+                        onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}
+                        style={{ cursor: 'pointer', userSelect: 'none', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                      >
+                        <h4>PROPERTIES {isPropertiesExpanded ? '▾' : '▸'}</h4>
+                      </div>
+                      {isPropertiesExpanded && (
+                        <div className="properties-grid-sidebar">
+                          {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
+                            <div key={key} className="property-sidebar-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                              <span className="property-sidebar-key" style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{key}</span>
+                              <span className="property-sidebar-value" style={{ fontSize: '0.85rem' }}>
+                                {Array.isArray(value) ? (
+                                  <div className="property-tags">
+                                    {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
+                                  </div>
+                                ) : String(value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-
-              <div className="editor-actions">
-                <button className="btn btn-glow" onClick={handleReanalyze}>Re-analyze</button>
-                <div className="move-group">
-                  <select
-                    className="editor-select"
-                    value={moveToCategory}
-                    onChange={(e) => setMoveToCategory(e.target.value)}
-                  >
-                    <option value="">Move to...</option>
-                    {taxonomies.map(cat => (
-                      <option key={cat.name} value={cat.name}>{cat.name}</option>
-                    ))}
-                  </select>
-                  <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
-                </div>
-                <div className="action-group" style={{ marginLeft: 'auto' }}>
-                  <button className="btn btn-warning" onClick={handleDeleteNote}>Delete</button>
-                </div>
-              </div>
-            </div>
+              </aside>
+            </>
           ) : (
             /* --- CAPTURE VIEW --- */
             <div className={`capture-layout mode-${captureMode}`}>
@@ -1561,7 +1704,17 @@ function App() {
                   {chatHistory.map((msg, idx) => (
                     <div key={idx} className={`chat-bubble ${msg.role}`}>
                       <div className={msg.role === 'user' ? "user-msg-content" : "ai-msg-content"}>
-                        {msg.summary || msg.content}
+                        {msg.role === 'assistant' && (
+                          <div className="query-result-header">
+                            <div className="query-result-header-left">
+                              <span className="ai-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
+                              <h4>KAE ANALYSIS</h4>
+                            </div>
+                          </div>
+                        )}
+                        {msg.role === 'assistant' && (msg.summary || msg.content)
+                          ? parseQuerySummary(msg.summary || msg.content, handleSelectSourceFile)
+                          : (msg.summary || msg.content)}
                         {msg.timeline && msg.timeline.length > 0 && (
                           <div className="query-timeline" style={{ marginTop: '16px' }}>
                             {msg.timeline.map((t, i) => (
@@ -1687,7 +1840,14 @@ function App() {
       <div className="toast-container">
         {toastFlags.map((toast) => (
           <div key={toast.id} className="toast-flag">
-            <div className="toast-content">{toast.message}</div>
+            <div className="toast-content">
+              {toast.message.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, i) => {
+                const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                return linkMatch
+                  ? <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="toast-link">{linkMatch[1]}</a>
+                  : <span key={i}>{part}</span>;
+              })}
+            </div>
             <button className="toast-close" onClick={() => setToastFlags(prev => prev.filter(t => t.id !== toast.id))}>✕</button>
           </div>
         ))}
@@ -1701,20 +1861,24 @@ function App() {
               <button className="close-btn" onClick={() => setIsSettingsOpen(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <input
-                className="setting-input"
-                value={vaultPath}
-                onChange={(e) => setVaultPath(e.target.value)}
-                placeholder="Vault path..."
-              />
-              <button className="btn btn-save" onClick={handleSaveConfig}>Save</button>
+              <fieldset className="settings-fieldset">
+                <legend className="settings-legend">Local Vault Path</legend>
+                <p>Absolute path to your Markdown vault directory.</p>
+                <input
+                  className="setting-input font-mono"
+                  value={vaultPath}
+                  onChange={(e) => setVaultPath(e.target.value)}
+                  placeholder="/Users/username/Vault"
+                />
+              </fieldset>
 
-              <div className="settings-danger-zone" style={{ marginTop: '32px', borderTop: '1px solid var(--c-border)', paddingTop: '16px' }}>
-                <h4 style={{ color: '#ef4444', fontSize: '0.8rem', marginBottom: '8px' }}>Danger Zone</h4>
+              <fieldset className="settings-fieldset" style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                <legend className="settings-legend" style={{ color: '#ef4444' }}>Danger Zone</legend>
+                <p>Permanently delete all notes across all taxonomies.</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
-                    className="setting-input"
-                    placeholder="Type 'delete' to clear vault..."
+                    className="setting-input font-mono"
+                    placeholder="Type 'delete' to confirm"
                     value={clearConfirmText}
                     onChange={(e) => setClearConfirmText(e.target.value)}
                   />
@@ -1722,7 +1886,10 @@ function App() {
                     {isClearing ? 'Clearing...' : 'Clear Vault'}
                   </button>
                 </div>
-              </div>
+              </fieldset>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-save" onClick={handleSaveConfig}>Save Changes</button>
             </div>
           </div>
         </div>
