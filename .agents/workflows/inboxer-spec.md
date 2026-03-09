@@ -1,4 +1,8 @@
 ---
+description: /inboxer-spec
+---
+
+---
 description: Inboxer Spec Writer — use after /inboxer-teamlead outputs an approved context block. Writes the full implementation spec, self-audits it, and invokes the Developer.
 ---
 
@@ -48,6 +52,15 @@ For every new or modified component:
 - Confirmation the class does not apply to elements that should NOT receive this change
 - If deleting: grep result showing it is safe to delete
 
+**New classes must be declared explicitly:**
+For every new CSS class this spec introduces, list:
+```
+NEW CLASS: .[class-name]
+Properties: [full CSS definition]
+Used in: [which JSX element]
+Confirmed does not already exist: grep -r "[class-name]" frontend/src/ → [result]
+```
+
 ### 1e. Backend changes
 - Exact endpoint path and HTTP method
 - Request body (fields, types)
@@ -58,6 +71,15 @@ For every new or modified component:
 - What the function currently does
 - Exact change
 - What must not change
+
+**Inline style rule — applies to all JSX snippets in this section:**
+Any style={{ }} attribute in a JSX snippet must be justified inline as follows:
+```
+style={{ [property]: [value] }}  ← DYNAMIC: computed from [state/prop name] at runtime
+```
+If a style value is static (not computed at runtime), it must be moved to a CSS class.
+Static inline styles in spec JSX snippets will be implemented as static inline styles by the
+Developer — do not include them.
 
 ### 1g. Testing tasks — mandatory extra section
 If this spec involves test files:
@@ -103,6 +125,10 @@ Stash instruction included:                        [YES/NO]
 Permitted file list complete (every file named):   [YES/NO — list missing]
 Props interfaces fully typed:                      [YES/NO — list missing]
 CSS uses only confirmed existing class names:      [YES/NO — list any invented]
+All new CSS classes declared in 1d with full
+  definition and grep confirmation:                [YES/NO/N/A — list any missing]
+All JSX inline styles in 1f are dynamic (runtime
+  computed) — no static values:                    [YES/NO — list any static ones found]
 No unresolved "or" branches anywhere in spec:      [YES/NO — list any]
 Layout impact before/after callout present:        [YES/NO/N/A]
 Backend request+response shapes defined:           [YES/NO/N/A]
