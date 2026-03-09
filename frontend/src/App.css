@@ -56,8 +56,8 @@ body {
 /* --- LEFT SIDEBAR --- */
 .sidebar {
   width: var(--sidebar-w);
-  background-color: var(--c-sidebar);
-  border-right: 1px solid var(--c-border);
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 20px;
@@ -160,7 +160,6 @@ body {
 
 .taxonomy-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
@@ -168,26 +167,36 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   font-size: 0.95rem;
-  color: var(--c-text-muted);
+  color: var(--text-secondary);
   user-select: none;
   font-weight: 500;
+  background: transparent;
+  border-left: 2px solid transparent;
+}
+
+.taxonomy-item .taxonomy-item-label {
+  flex: 1;
+}
+
+.taxonomy-item .badge {
+  color: var(--text-muted);
 }
 
 .taxonomy-item:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: var(--c-text);
+  background-color: var(--bg-raised);
 }
 
 .taxonomy-item.active {
-  background-color: var(--c-sidebar-item-active);
-  color: var(--c-text);
+  background-color: var(--bg-raised);
+  color: var(--text-primary);
   font-weight: 600;
+  border-left: 2px solid var(--ai-accent);
 }
 
 .notes-list {
   margin-left: 12px;
   padding-left: 8px;
-  border-left: 1px solid var(--c-border);
+  border-left: 1px solid var(--border);
   margin-top: 4px;
 }
 
@@ -217,15 +226,16 @@ body {
   align-items: center;
   gap: 10px;
   margin-bottom: 2px;
+  color: var(--text-secondary);
 }
 
 .note-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-raised);
 }
 
 .note-item.active {
-  background: var(--c-sidebar-item-active);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--ui-accent) 20%, transparent);
+  color: var(--ui-accent);
 }
 
 .note-dot {
