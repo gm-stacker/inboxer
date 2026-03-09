@@ -1,97 +1,102 @@
 ---
 name: kae-architecture
-description: Core architecture rules, conventions, and project context for the Knowledge Abstraction Engine (KAE). Load this skill whenever working on any part of the KAE project — frontend, backend, AI integration, or vault handling.
+description: Use this skill when making changes to system architecture, AI integration patterns, service boundaries, data flow between frontend and backend, or the Gemini prompt pipeline in Inboxer.
 ---
 
-## What This App Is
+# Inboxer Architecture
 
-KAE is a personal AI knowledge management tool. The user chats with an AI that has access to their personal Obsidian vault, surfacing relevant notes and enriching them over time using Google Gemini.
+## DO NOT USE THIS SKILL FOR
+- Purely cosmetic CSS changes
+- Renaming variables with no structural impact
+- Writing test files
 
-## Tech Stack
+---
 
-| Layer | Technology |
-|---|---|
-| Frontend | React + Vite + TypeScript |
-| Backend | C# (.NET) |
-| AI Model | Google Gemini |
-| IDE | Antigravity |
-| Knowledge Base | Local Obsidian vault (Markdown files with YAML frontmatter) |
+## System Overview
 
-## Critical Architecture Rules — Never Violate These
-
-1. **The Obsidian vault is the single source of truth.** Do not suggest introducing a database, duplicating notes elsewhere, or treating any other store as authoritative.
-
-2. **The backend uses FileSystemWatcher** to detect vault changes in real time. Do not replace this with polling loops or manual sync triggers.
-
-3. **Writes are frontmatter-only.** The backend may enrich YAML frontmatter in `.md` files. It must never rewrite or modify note body content.
-
-4. **Gemini is called from the C# backend only.** The frontend never calls AI APIs directly.
-
-5. **Frontend ↔ Backend communication is REST (JSON only).** Do not introduce GraphQL, gRPC, or WebSockets unless explicitly requested.
-
-## Code Conventions
-
-- TypeScript strict mode — no `any` types unless absolutely unavoidable
-- C# follows standard .NET naming conventions (PascalCase for classes and methods)
-- YAML frontmatter keys use snake_case
-- Keep components and services small and single-responsibility
-
-## Before Making Any Changes
-
-1. Read every file in the project before proposing or writing anything
-2. Generate an `implementation_plan.md` artifact and wait for approval before touching code
-3. If a proposed change would violate any Critical Architecture Rule above, stop and flag it explicitly rather than proceeding
-
-## Anti-Patterns — Reject These If Suggested
-
-- Introducing SQLite, PostgreSQL, or any other database
-- Rewriting note body content (frontmatter enrichment only)
-- Moving Gemini API calls to the frontend
-- Replacing FileSystemWatcher with a polling loop
-- Adding unnecessary abstraction layers or over-engineering simple features
-- **Using `Path.Combine(Environment.GetFolderPath(...), "Desktop", "inboxer_vault")` as a vault path default** — this is ALWAYS wrong. The correct path is `Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"))`.
-
-## ⚠️ Vault Path — Critical Rule
-
-There are **two vault-related paths** in this project. They must ALWAYS resolve to the same directory:
-
-| Controller/Service | Correct path resolution |
-|---|---|
-| `TaxonomyController` | `Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"))` |
-| All other controllers (QueryController, BriefingController, ChatController, InsightsController, TripContextController) | Same as above — populated via `config["VaultPath"]` with the above as the fallback |
-| VaultWatcherService | Must track the same path |
-
-**The vault is at: `<project_root>/vault/`** (sibling of `Backend/`)
-
-**NEVER** use `~/Desktop/inboxer_vault` as a path — that directory is empty and exists only as a legacy artifact.
-
-### Vault Path Verification Checklist
-
-Before restarting the backend, verify:
-```bash
-# Vault has notes
-find ~/Desktop/inboxer/vault -name "*.md" | head -5
-
-# Correct path should return categories
-curl -s http://localhost:5177/api/taxonomy | python3 -m json.tool
-
-# Query should return note content, not hallucinated facts
-curl -s -X POST http://localhost:5177/api/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"list my notes"}]}' | python3 -m json.tool
+```
+Obsidian Vault (.md files)
+        ↓
+IVaultCacheService (in-memory cache, C#)
+        ↓
+Controllers (REST API, C# .NET 10)
+        ↓  HTTP
+React Frontend (Vite + TypeScript)
+        ↓
+Gemini 3.1 Pro (via API) — for analysis, echo generation, re-analysis
 ```
 
-### Unit Test
-A unit test exists at `Backend.Tests/VaultPathTests.cs`. **Run it after any controller refactor:**
-```bash
-cd ~/Desktop/inboxer && dotnet test Backend.Tests/
+---
+
+## Backend Service Layer
+
+### IVaultCacheService
+The vault is loaded into memory at startup. All reads go through the cache — never direct file reads.
+
+```csharp
+IVaultCacheService.GetAllNotes()           // O(n), no disk I/O
+IVaultCacheService.GetCompletedNotes()     // pre-filtered list
+IVaultCacheService.GetNoteByFilename(fn)   // O(1) dictionary lookup
 ```
 
-## Current Project State
+**CRITICAL:** Never add direct file I/O in a controller. Route through `IVaultCacheService`.
 
-> Update this section at the end of every session before closing the chat.
+### Controller responsibilities
+- HTTP boundary only: deserialise request, call service, serialise response
+- No business logic in controllers
+- Validation in controllers is acceptable; transformation is not
 
-- **Last working feature:**
-- **Currently building:**
-- **Known bugs or issues:**
-- **Recent architectural changes:**
+### Service responsibilities
+- All business logic
+- Vault interaction via `IVaultCacheService`
+- Gemini API calls via `GeminiService`
+
+---
+
+## Gemini Integration
+
+All Gemini calls go through `GeminiService`. Never call the Gemini API directly from a controller.
+
+Thinking level policy:
+- Standard analysis: **Medium thinking**
+- Re-analysis or complex cross-note reasoning: **High thinking**
+- Simple tag/metadata extraction: **Low thinking**
+
+See `gemini-prompt-patterns` skill for prompt format rules.
+
+---
+
+## Frontend Data Flow
+
+```
+App.tsx (state owner)
+  ├── Sidebar.tsx (receives notes list, callbacks)
+  ├── Editor.tsx (receives selected note, callbacks)
+  └── Right panel (receives echo data)
+```
+
+State lives in `App.tsx`. Child components receive data and callbacks via props.
+Never lift state into a child component. Never store duplicate state.
+
+### API service
+All API calls go through `frontend/src/services/api.ts`.
+Never call `fetch` directly from a component — always through the service layer.
+
+---
+
+## Architecture Constraints
+
+1. **No new npm packages without Team Lead approval** — evaluate necessity first
+2. **No NuGet packages without Team Lead approval** — `IVaultCacheService` covers most data needs
+3. **No direct file reads in frontend** — all data comes from the backend API
+4. **No business logic in React components** — components render and handle events only
+5. **No Gemini API calls from frontend** — all AI calls are backend-mediated
+6. **One concern per PR** — do not bundle architectural changes with UI changes
+
+---
+
+## Known Issues (for context, not for fixing in unrelated tasks)
+
+- `places[].address` not indexed for search — retrieval layer gap
+- Alias expansion not implemented (JB → Johor Bahru etc.)
+- `TimelineTableToggle.tsx` exists but is untracked — full spec in vault

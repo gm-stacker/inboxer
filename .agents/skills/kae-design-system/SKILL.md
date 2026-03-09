@@ -1,112 +1,138 @@
 ---
 name: kae-design-system
-description: Use this skill for any frontend work in the React app — CSS changes, new components, styling, layout, or UI fixes. Enforces the KAE design system.
+description: Use this skill when modifying ANY frontend CSS, component styling, layout structure, colour, spacing, typography, or visual appearance in Inboxer. Also use when creating new UI components or reviewing whether a UI change conforms to the design system.
 ---
 
-# KAE Design System Skill
+# Inboxer Design System
 
-## Note display rules — enforce on every frontend change
+## DO NOT USE THIS SKILL FOR
+- Backend C# changes with no frontend impact
+- Writing or modifying test files only
+- Non-visual TypeScript logic changes
 
-### Note title behaviour
-- The note title display is READ ONLY — never an editable text input
-- The title is derived from note content using getDisplayTitle() 
-  and displayed as static text only
-- Clicking the title does NOT make it editable
-- Font size for derived title: 24px regular weight maximum — 
-  never render the full first sentence at heading scale
+---
 
-### Note action buttons
-- Maximum 3 action buttons visible at any time in note view
-- Primary action: Re-analyze (amber accent)
-- Secondary actions: Move to, Delete
-- Synthesize Echoes moves to the right panel, not the note footer
-- Never show Save Changes as a button — auto-save only, 
-  confirmed by a subtle "Saved" indicator in the header
-- Never show Status or Confidence fields in the note view — 
-  these are internal metadata, not user-facing content
-- Properties panel moves to the BOTTOM of the note, 
-  below the note body content
+## Design Tokens
 
-### Note titles
-- Always derive display title from note body content
-- Strip the timestamp prefix `[DD-MM-YYYY HH:MM]` from display
-- Never show CamelCase filenames as titles (e.g. 
-  `SourcingCat6CablesFor10GbE` is wrong — derive from content)
+These are the only permitted values. Do not invent new values.
 
-### Properties panel
-- Never show the YAML frontmatter properties panel in the note 
-  view by default
-- Properties/metadata are collapsed and hidden unless the user 
-  explicitly expands them
-- The user does not need to see `type`, `tags`, `body_hash`, 
-  `entities` etc. in normal note viewing
+```css
+/* Backgrounds */
+--bg-base: #0b111e          /* main content area background */
+--bg-sidebar: #0d1526       /* sidebar background */
+--bg-surface: #0f172a       /* right panel, cards */
+--bg-raised: #1e293b        /* elevated surfaces, hover states */
 
-### Sidebar structure
-- One unified note list — no separation between an "Inbox" 
-  section and a "Categories" section showing the same notes
-- Categories are filters, not duplicate views
-- Notes appear once, in one list, filtered by the active category
-- Never show both a top-level note count section AND a categories 
-  section simultaneously
+/* Borders */
+--border: #1e293b
 
-### Theme
-- Dark theme only — background `#0D0D0D`, never white or light grey
-- Never revert to a light theme under any circumstances
+/* Text */
+--text-primary: #f8fafc
+--text-secondary: #94a3b8
+--text-muted: #64748b
 
-## Mission
-Maintain visual consistency across all UI components. Every frontend change must conform to this design system exactly. Never introduce new colours, fonts, or spacing values not defined here.
+/* Accent colours */
+--ui-accent: #6366f1        /* indigo — interactive UI elements, focus rings */
+--ai-accent: #c9974a        /* amber — Re-analyze button, Memory Echo borders, active sidebar item */
 
-## Colour tokens — use these exact values, no others
-- `--bg-base`: `#0b111e` — page background
-- `--bg-surface`: `#0f172a` — sidebar, cards, modals, panels
-- `--bg-raised`: `#1e293b` — chat bubbles, skeletons, hover states, tag chips
-- `--bg-hover`: `rgba(255, 255, 255, 0.03)` — subtle row hover states
-- `--border`: `#1e293b` — all dividers and drawer edges
-- `--text-primary`: `#F8FAFC`
-- `--text-secondary`: `#94a3b8` — muted text
-- `--ui-accent`: `#6366f1` — primary UI interactive elements (indigo)
-- `--ai-accent`: `#c9974a` — amber, used ONLY for AI-generated content
-- `--destructive`: `#C0392B`
+/* Legacy aliases (still active in App.css — do not remove) */
+--c-bg: #0b111e
+--c-sidebar: #0f172a
+--c-text: #f1f5f9
+--c-text-muted: #94a3b8
+--c-border: #1e293b
+--c-accent: #6366f1
+--c-accent-hover: #818cf8
+--c-active: #1e293b
+--c-ai-accent: #c9974a
 
-## AI accent rule — critical
-The amber `#C9974A` accent is used ONLY for:
-- Sparkle icons (✨) prefixing AI-generated content
-- AI Memory Echoes left border
-- Suggested Focus left border in briefing
-- Toast notifications from [FLAG] responses
-- The Generate button in Trip Briefing popup
-- Focus ring outlines on interactive elements: `1px solid #C9974A`
+/* Layout */
+--sidebar-w: 260px
+```
 
-Never use amber for user-generated content, headings, navigation, or decorative purposes.
+---
 
-## Typography
-- Font: Inter (already loaded), fallback: system-ui
-- Never introduce a new typeface
-- Note titles: 24px regular weight — never bold
-- Section labels: 11px uppercase, `letter-spacing: 0.08em`, `--text-muted` colour
-- Body text: 15px, line-height 1.7
-- Small labels: 13px, `--text-secondary`
+## Layout Structure
 
-## Spacing and layout
-- Border radius: 8px on all components consistently
-- Sidebar width: 260px fixed
-- Right panel width: 320px
-- Modal width: 640px, max-height 80vh
-- No drop shadows except modals: `0 4px 24px rgba(0,0,0,0.4)`
-- No gradients anywhere
+### Three-column layout
+```
+.app-container (display:flex, flex-direction:row)
+  ├── .sidebar (width: var(--sidebar-w), flex-shrink:0)
+  ├── [content column] (flex:1)
+  └── [right panel] (width:320px, flex-shrink:0)
+```
 
-## Component rules
-- Note count badges: replaced with dot indicators only
-- Active sidebar item: `--bg-raised` background + 2px `--ai-accent` left border
-- Table headers: 11px uppercase, `--text-muted`, no background fill
-- Table rows: 40px height, alternate rows `#1E1E1E`
-- Empty states: single muted text line, no illustrations
-- Transitions: 150–200ms ease, no bounce or spring animations
-- Loading states: amber pulse on sparkle icon only, no spinners
+**CRITICAL:** `.sidebar`, content column, and right panel are DIRECT children of `.app-container`.
+Any change that moves one of these elements to a different parent will break the three-column layout.
+This must be called out explicitly in the spec's layout impact assessment.
 
-## What never to do
-- Never hardcode hex values outside this token list
-- Never use bold for body text or note titles
-- Never add decorative elements, illustrations, or icons for non-functional purposes
-- Never use localStorage or sessionStorage
-- Never introduce new npm packages for UI without flagging it
+### Content column padding
+- `.note-editor` has `padding: 32px` — this is the content padding
+- Do NOT add padding to the content column's container
+- Do NOT share padding with the right panel
+
+---
+
+## Component Rules
+
+### Buttons
+| Class | Purpose | Colour |
+|---|---|---|
+| `.btn-primary` | Default action | `--ui-accent` |
+| `.btn-reanalyze` | AI re-analysis trigger | `--ai-accent` (amber) border + text |
+| `.btn-warning` | Destructive/caution action | `--c-ai-accent` hover state |
+| `.btn-danger` | Delete | `--destructive` (defined in component) |
+
+Button rules:
+- Never use inline `style=` for button colours — use class-based styling only
+- Never invent a button class — use from this list only
+- `btn-reanalyze` must have: `border: 1px solid var(--c-ai-accent); color: var(--c-ai-accent)`
+
+### Sidebar items
+- Active state: `background: var(--c-active)`, `border-left: 2px solid var(--c-ai-accent)`
+- Normal state: no background, no border
+- Count badge: `color: var(--text-muted)`
+
+### Memory Echo cards
+- Border: `1px solid var(--ai-accent)` (amber)
+- Background: `var(--bg-surface)`
+
+### Capture panel chips (Plan / Reminder / Idea)
+- Must render with NEUTRAL styling — no colour differentiation
+- Background: `var(--bg-raised)`
+- Text: `var(--text-secondary)`
+- Do NOT use green, blue, or any accent colour for chips
+
+---
+
+## CSS Rules
+
+### What you may do
+- Add new CSS classes for new elements
+- Modify an existing class's property if the spec explicitly names it
+- Use CSS custom properties from the token list above
+
+### What you may NOT do
+- Invent CSS class names (read the file, use what exists)
+- Add `!important` without spec explicitly requiring it
+- Use Tailwind utility classes — this project uses CSS custom properties only
+- Use inline `style=` attributes except for genuinely dynamic computed values
+- Add shadows, gradients, or border-radius values not in the existing codebase
+
+### Before deleting any class
+```bash
+grep -r "class-name" frontend/src/
+```
+If the class appears in more than one file: do NOT delete it. Add new classes alongside.
+
+---
+
+## Verification requirements for UI changes
+
+Every UI acceptance criterion must be verified with:
+- Exact DevTools selector confirming element structure (not "looks right")
+- Exact CSS property value observed
+- Before/after comparison for layout changes
+
+❌ Never accept: "refresh the browser and check"
+✅ Require: "DevTools confirms `.note-action-bar` is `display:flex` with `.note-action-bar-spacer` having `flex:1`"

@@ -1,49 +1,103 @@
 ---
 name: obsidian-frontmatter-schema
-description: Use this skill when working on note enrichment, frontmatter parsing, AI extraction outputs, or any code that reads/writes YAML properties in markdown files.
+description: Use this skill when reading, writing, or validating YAML frontmatter in Obsidian vault notes. Also use when adding new frontmatter fields, changing enrichment logic, or writing tests that involve note metadata.
 ---
 
-# Obsidian Frontmatter Schema Skill
+# Obsidian Frontmatter Schema
 
-## Mission
-Ensure all YAML frontmatter written by KAE is valid Obsidian properties format and consistent across all notes.
+## DO NOT USE THIS SKILL FOR
+- Note body content (below the closing ---)
+- CSS or UI changes
+- API endpoint design with no frontmatter impact
 
-## App-managed fields — only these fields are written by KAE
+---
+
+## Canonical Frontmatter Schema
+
 ```yaml
 ---
-type: note          # string: note | task | log | event | metric
-tags:               # array of strings, lowercase, underscores not spaces
-  - sleep
-  - health
-extracted_date: 2026-03-07   # YYYY-MM-DD string, never a YAML date type
-metrics:            # object of key-value pairs for quantitative data
-  melatonin_mg: 8
-  sleep_duration_hours: 6.5
-entities:           # array of extracted proper nouns (people, places, orgs)
-  - Tim Hong
-  - Changi Airport
-last_processed_hash: abc123def456   # MD5 of note body, used for loop prevention
+title: string                    # Human-readable title, no timestamp
+created: YYYY-MM-DD HH:MM        # ISO-like creation datetime
+type: capture | reminder | idea | place | note
+tags:
+  - string                       # lowercase, hyphen-separated
+category: string                 # taxonomy category from IVaultCacheService
+done: true | false               # omit field if false (not "done: false")
+places:                          # optional, only if type: place
+  - name: string
+    address: string
+    rating: float
+    maps_url: string
+    photo_url: string
 ---
 ```
 
-## Obsidian compatibility rules
-- Arrays: always use block style (`- item`) not inline (`[item1, item2]`)
-- Dates: always `YYYY-MM-DD` quoted string — never YAML native date type
-- No YAML anchors (`&`, `*`)
-- No multiline strings unless absolutely necessary
-- Property names: lowercase, underscores only, no hyphens or spaces
-- All string values containing `:` must be quoted
+---
 
-## Type definitions
-- `note` — general journal entry, thought, observation
-- `task` — actionable item, may have extracted_date as due date
-- `log` — recurring entry (sleep log, mood log, daily log)
-- `event` — something that happened or is scheduled
-- `metric` — quantitative tracking entry
+## Rules
 
-## What never to write
-- Never write AI Memory Echoes to the vault
-- Never write chat responses to the vault
-- Never write query results to the vault
-- Never add a `title` field that duplicates the filename
-- Never modify any user-written property not in the app-managed list above
+### 1. Required fields for every note
+`title`, `created`, `type`, `tags` — these must always be present.
+`category` is added during enrichment. `done` is added when marked done.
+
+### 2. Never write `done: false`
+Omit the `done` field entirely when a note is not done.
+Only write `done: true` when marking complete.
+
+### 3. Title must not contain the timestamp
+The display title comes from `frontmatter.title`, not from parsing the filename.
+```csharp
+// Correct
+var title = frontmatter.Title;
+
+// Wrong
+var title = filename.Replace(".md", "").Split(' ').Skip(1).Join(" ");
+```
+
+### 4. Tags must be lowercase and hyphen-separated
+```yaml
+tags:
+  - meeting-notes       ✅
+  - MeetingNotes        ❌
+  - meeting notes       ❌
+```
+
+### 5. `places` array — all fields must be indexed
+When enriching place notes, all fields in the `places` array must be populated if available:
+- `name` — required
+- `address` — required (currently a known gap in retrieval — must be fixed before retrieval tasks)
+- `rating` — include 0.0 if unknown, not null
+- `maps_url` — include if available
+- `photo_url` — include if available
+
+### 6. Parsing rules
+Always parse frontmatter with a YAML library, never with string manipulation:
+```csharp
+// Use YamlDotNet or equivalent
+var deserializer = new DeserializerBuilder().Build();
+var frontmatter = deserializer.Deserialize<NoteFrontmatter>(yamlBlock);
+```
+
+### 7. Preserve note body on frontmatter writes
+When writing updated frontmatter, the note body must be preserved exactly.
+See `vault-write-safety` skill for the required write pattern.
+
+---
+
+## Parsing the note file
+
+```
+[frontmatter block]
+---
+title: My Note
+created: 2026-01-15 14:30
+type: idea
+tags:
+  - project-x
+---
+
+[note body starts here]
+Everything below the closing --- is the body.
+```
+
+Split on `---\n` — first block is frontmatter, everything after the second `---\n` is body.
