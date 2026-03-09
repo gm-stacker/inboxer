@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactElement } from 'react';
 import type { FormEvent } from 'react';
 import './App.css'
+import TimelineTableToggle from './components/TimelineTableToggle';
 
 interface TaxonomyCategory {
   name: string
@@ -120,8 +121,8 @@ const parseQuerySummary = (
   if (!text) return <></>;
 
   const elements: ReactElement[] = [];
-  // Split on [TABLE]...[/TABLE] and [SOURCES]...[/SOURCES]
-  const parts = text.split(/(\[TABLE\][\s\S]*?\[\/TABLE\]|\[SOURCES\][\s\S]*?\[\/SOURCES\])/g);
+  // Split on [TIMELINE]...[/TIMELINE], [TABLE]...[/TABLE], and [SOURCES]...[/SOURCES]
+  const parts = text.split(/(\[TIMELINE\][\s\S]*?\[\/TIMELINE\]|\[TABLE\][\s\S]*?\[\/TABLE\]|\[SOURCES\][\s\S]*?\[\/SOURCES\])/g);
 
   parts.forEach((part, i) => {
     if (part.startsWith('[TABLE]') && part.endsWith('[/TABLE]')) {
@@ -156,6 +157,25 @@ const parseQuerySummary = (
             </tbody>
           </table>
         </div>
+      );
+    } else if (part.startsWith('[TIMELINE]') && part.endsWith('[/TIMELINE]')) {
+      const inner = part.slice(10, -11).trim();
+      const lines = inner.split('\n').filter(l => l.trim().startsWith('|'));
+      if (lines.length < 2) { elements.push(<p key={i}>{inner}</p>); return; }
+
+      const headers = lines[0].split('|').map(h => h.trim()).filter(Boolean);
+      const rows = lines.slice(2).map(l => l.split('|').map(c => c.trim()).filter(Boolean));
+      const sourceColIdx = headers.findIndex(h => h.toLowerCase().includes('source'));
+
+      elements.push(
+        <TimelineTableToggle
+          key={i}
+          headers={headers}
+          rows={rows}
+          sourceColIdx={sourceColIdx}
+          onSourceClick={onSourceClick}
+          defaultView="timeline"
+        />
       );
     } else if (part.startsWith('[SOURCES]') && part.endsWith('[/SOURCES]')) {
       const inner = part.slice(9, -10).trim();

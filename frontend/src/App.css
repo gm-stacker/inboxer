@@ -802,6 +802,31 @@ body {
   background: var(--c-border);
 }
 
+.timeline-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.timeline-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.timeline-toggle-btn.active {
+  background: var(--c-ai-accent);
+  color: var(--c-bg);
+  border-color: var(--c-ai-accent);
+}
+
 /* Query result table */
 .query-table-wrapper {
   overflow-x: auto;
