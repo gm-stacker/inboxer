@@ -349,6 +349,7 @@ body {
 }
 
 .center-container.three-column-mode {
+  flex-direction: column;
   justify-content: flex-start;
   padding-top: 0;
   padding-bottom: 0;
@@ -1203,7 +1204,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  height: 100vh;
   overflow-y: auto;
   width: 100%;
   scrollbar-width: none;
