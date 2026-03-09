@@ -814,7 +814,26 @@ function App() {
     }
   }
 
-
+  const handleUnmarkAsDone = async () => {
+    if (!selectedNote) return;
+    if (!confirm('Unmark this note as done? It will be moved back to its category.')) return;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        setSelectedNote(null);
+        await fetchTaxonomy();
+        if (selectedCategory) await handleSelectCategory(selectedCategory);
+        await fetchCompletedNotes();
+      } else {
+        alert('Failed to unmark note as done.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   const handleMoveNote = async () => {
     if (!selectedNote || !moveToCategory) return
@@ -1710,7 +1729,11 @@ function App() {
 
                   <div className="action-group" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span className="editor-meta" style={{ marginRight: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{isSaving ? 'Saving...' : 'Saved'}</span>
-                    <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
+                    {/tags:[\s\S]*?- done/.test(selectedNote.content) ? (
+                      <button className="btn btn-secondary" onClick={handleUnmarkAsDone} title="Unmark as done">↺ Undone</button>
+                    ) : (
+                      <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
+                    )}
                     <button className="btn btn-warning icon-btn" onClick={handleDeleteNote} title="Delete note">
                       <span className="material-icons">delete</span>
                     </button>

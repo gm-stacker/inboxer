@@ -280,6 +280,44 @@ namespace Backend.Controllers
             return $"---{newFrontmatter}\n---{body}";
         }
 
+        [HttpDelete("{category}/notes/{filename}/done")]
+        public async Task<IActionResult> UnmarkNoteAsDone(string category, string filename)
+        {
+            var filePath = Path.Combine(_vaultPath, category, filename);
+            if (!System.IO.File.Exists(filePath)) return NotFound(new { error = "Note not found." });
+
+            var content = await System.IO.File.ReadAllTextAsync(filePath);
+            var updatedContent = RemoveDoneFromFrontmatter(content);
+            await System.IO.File.WriteAllTextAsync(filePath, updatedContent);
+            return Ok(new { message = "Note unmarked as done." });
+        }
+
+        /// <summary>
+        /// Parses the YAML frontmatter and removes the "done" tag and the done_at timestamp.
+        /// Body content is never modified.
+        /// </summary>
+        public static string RemoveDoneFromFrontmatter(string content)
+        {
+            if (!content.StartsWith("---")) return content;
+
+            var endIdx = content.IndexOf("\n---", 3);
+            if (endIdx == -1) return content;
+
+            var frontmatter = content.Substring(3, endIdx - 3);
+            var body = content.Substring(endIdx + 4); // skip the closing \n---
+
+            var lines = frontmatter.Split('\n').ToList();
+
+            // Remove `- done` exactly from the tags array
+            lines.RemoveAll(l => l.Trim().Equals("- done", StringComparison.OrdinalIgnoreCase) || l.Trim().Equals("- \"done\"", StringComparison.OrdinalIgnoreCase));
+            
+            // Remove `done_at:` property
+            lines.RemoveAll(l => l.TrimStart().StartsWith("done_at:", StringComparison.OrdinalIgnoreCase));
+
+            var newFrontmatter = string.Join('\n', lines);
+            return $"---{newFrontmatter}\n---{body}";
+        }
+
         // ── Full-Text Search ───────────────────────────────────────────────
 
         [HttpGet("search")]
