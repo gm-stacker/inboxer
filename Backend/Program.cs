@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+// Load .env before building configuration
+DotNetEnv.Env.Load(System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), ".env"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,9 +22,6 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader()
             .AllowAnyMethod());
 });
-
-// Load .env before building configuration
-DotNetEnv.Env.Load(System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), ".env"));
 
 var app = builder.Build();
 

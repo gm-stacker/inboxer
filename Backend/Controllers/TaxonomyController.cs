@@ -200,11 +200,7 @@ namespace Backend.Controllers
             await _writeLock.WaitAsync();
             try
             {
-                if (System.IO.File.Exists(archivePath))
-                {
-                    System.IO.File.Delete(archivePath);
-                }
-                System.IO.File.Move(filePath, archivePath);
+                System.IO.File.Move(filePath, archivePath, overwrite: true);
                 
                 if (_logger != null)
                 {
