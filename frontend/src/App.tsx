@@ -1509,9 +1509,9 @@ function App() {
                     >
                       <span className="material-icons" style={{ fontSize: '20px' }}>arrow_back</span>
                     </button>
-                    <span style={{ color: 'var(--text-secondary)' }}>vault</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>/</span>
-                    <span style={{ color: 'var(--text-primary)' }}>{selectedNote.category}</span>
+                    <span>vault</span>
+                    <span>/</span>
+                    <span>{selectedNote.category}</span>
                   </div>
 
                   <div className="editor-header-actions">

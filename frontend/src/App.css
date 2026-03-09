@@ -1437,10 +1437,18 @@ textarea.chunked-textarea {
 
 .editor-breadcrumbs {
   font-size: 0.85rem;
-  color: var(--c-text-muted);
+  color: var(--text-secondary);
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.editor-breadcrumbs span {
+  color: var(--text-secondary);
+}
+
+.editor-breadcrumbs span:last-child {
+  color: var(--text-primary);
 }
 
 .editor-header-actions {
