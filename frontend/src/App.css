@@ -1206,6 +1206,11 @@ body {
   height: 100vh;
   overflow-y: auto;
   width: 100%;
+  scrollbar-width: none;
+}
+
+.note-editor::-webkit-scrollbar {
+  display: none;
 }
 
 .editor-title-row {
@@ -1333,6 +1338,69 @@ body {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+}
+
+/* --- PROPERTIES BAR FOOTER --- */
+.properties-bar-container {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.properties-bar {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+}
+
+.properties-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.properties-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.properties-bar-label {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.properties-grid-sidebar {
+  padding: 16px 32px;
+  background: var(--bg-base);
+}
+
+.property-sidebar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.property-sidebar-key {
+  font-size: 0.75rem;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.property-sidebar-value {
+  font-size: 0.85rem;
 }
 
 /* --- INLINE MEDIA EDITOR --- */

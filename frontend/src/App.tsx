@@ -1696,6 +1696,42 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Properties Bar Footer */}
+              {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
+                <div className="properties-bar-container">
+                  <div className="properties-bar" onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}>
+                    <div className="properties-bar-left">
+                      <span
+                        className="chevron-icon"
+                        style={{ transform: isPropertiesExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                      >
+                        ▸
+                      </span>
+                      <span className="properties-bar-label">PROPERTIES</span>
+                    </div>
+                    <div className="properties-bar-right">
+                      <span>Created: {parseNoteContent(selectedNote.content).props.created || '-'}</span>
+                    </div>
+                  </div>
+                  {isPropertiesExpanded && (
+                    <div className="properties-grid-sidebar">
+                      {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
+                        <div key={key} className="property-sidebar-row">
+                          <span className="property-sidebar-key">{key}</span>
+                          <span className="property-sidebar-value">
+                            {Array.isArray(value) ? (
+                              <div className="property-tags">
+                                {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
+                              </div>
+                            ) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             /* --- CAPTURE VIEW --- */
@@ -1898,176 +1934,154 @@ function App() {
             </div>
           )}
         </div>
-      </main>
+      </main >
 
       {/* --- RIGHT PANEL (Phase 3b) --- */}
-      {selectedNote && (
-        <aside className="editor-right-panel">
-          <div className="right-panel-header">
-            <span className="sparkle-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
-            <h4>MEMORY ECHOES</h4>
-          </div>
-          <div className="right-panel-content">
-            {isGeneratingEchoes ? (
-              <div className="echoes-skeleton-state">
-                <div className="echo-card skeleton"></div>
-                <div className="echo-card skeleton" style={{ animationDelay: '0.15s' }}></div>
-                <div className="echo-card skeleton" style={{ animationDelay: '0.3s' }}></div>
-                <button className="btn btn-echoes" disabled style={{ opacity: 0.5 }}>
-                  <span className="material-icons spin" style={{ fontSize: '16px' }}>sync</span>
-                  Synthesizing...
-                </button>
-              </div>
-            ) : !dynamicEchoes ? (
-              <div className="echoes-empty-state">
-                <p className="echoes-prompt">Synthesize related memories across your vault.</p>
-                <button
-                  className="btn btn-echoes"
-                  onClick={handleGenerateEchoes}
-                >
-                  <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
-                  Synthesize Echoes
-                </button>
-              </div>
-            ) : (
-              <div className="echoes-list-ui">
-                {dynamicEchoes.map((line, i) => (
-                  <div key={i} className="echo-card">
-                    <div className="echo-card-label">Echo</div>
-                    <div className="echo-card-text">{line.replace(/^- /, '')}</div>
-                  </div>
-                ))}
-                <button
-                  className="btn btn-echoes"
-                  onClick={handleGenerateEchoes}
-                >
-                  <span className="material-icons" style={{ fontSize: '16px' }}>refresh</span>
-                  Refresh Echoes
-                </button>
-              </div>
-            )}
-
-            {/* Note Properties Sidebar Section */}
-            {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
-              <div className="right-panel-properties" style={{ marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--c-border)' }}>
-                <div
-                  className="properties-header"
-                  onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}
-                  style={{ cursor: 'pointer', userSelect: 'none', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <h4>PROPERTIES {isPropertiesExpanded ? '▾' : '▸'}</h4>
+      {
+        selectedNote && (
+          <aside className="editor-right-panel">
+            <div className="right-panel-header">
+              <span className="sparkle-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
+              <h4>MEMORY ECHOES</h4>
+            </div>
+            <div className="right-panel-content">
+              {isGeneratingEchoes ? (
+                <div className="echoes-skeleton-state">
+                  <div className="echo-card skeleton"></div>
+                  <div className="echo-card skeleton" style={{ animationDelay: '0.15s' }}></div>
+                  <div className="echo-card skeleton" style={{ animationDelay: '0.3s' }}></div>
+                  <button className="btn btn-echoes" disabled style={{ opacity: 0.5 }}>
+                    <span className="material-icons spin" style={{ fontSize: '16px' }}>sync</span>
+                    Synthesizing...
+                  </button>
                 </div>
-                {isPropertiesExpanded && (
-                  <div className="properties-grid-sidebar">
-                    {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
-                      <div key={key} className="property-sidebar-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                        <span className="property-sidebar-key" style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{key}</span>
-                        <span className="property-sidebar-value" style={{ fontSize: '0.85rem' }}>
-                          {Array.isArray(value) ? (
-                            <div className="property-tags">
-                              {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
-                            </div>
-                          ) : String(value)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
-      )}
+              ) : !dynamicEchoes ? (
+                <div className="echoes-empty-state">
+                  <p className="echoes-prompt">Synthesize related memories across your vault.</p>
+                  <button
+                    className="btn btn-echoes"
+                    onClick={handleGenerateEchoes}
+                  >
+                    <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
+                    Synthesize Echoes
+                  </button>
+                </div>
+              ) : (
+                <div className="echoes-list-ui">
+                  {dynamicEchoes.map((line, i) => (
+                    <div key={i} className="echo-card">
+                      <div className="echo-card-label">Echo</div>
+                      <div className="echo-card-text">{line.replace(/^- /, '')}</div>
+                    </div>
+                  ))}
+                  <button
+                    className="btn btn-echoes"
+                    onClick={handleGenerateEchoes}
+                  >
+                    <span className="material-icons" style={{ fontSize: '16px' }}>refresh</span>
+                    Refresh Echoes
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </aside>
+        )
+      }
 
       {/* --- AMBIENT ASSISTANT PANEL --- */}
-      {isChatPanelOpen && (
-        <aside className="ambient-chat-panel">
-          <div className="chat-panel-header">
-            <h3><span className="sparkle">✨</span> Ambient Assistant</h3>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="icon-btn" onClick={handleSaveConversation} title="Save this conversation">💾</button>
-              {selectedNote && (
-                <button
-                  className="icon-btn"
-                  onClick={handleGenerateEchoes}
-                  disabled={isGeneratingEchoes}
-                  title="Synthesize Echoes for current note"
-                >
-                  {isGeneratingEchoes ? '⏳' : '✨'}
-                </button>
-              )}
-              <button className="close-btn" onClick={() => setIsChatPanelOpen(false)}>✕</button>
-            </div>
-          </div>
-
-          <div className="assistant-content">
-            {dynamicEchoes && dynamicEchoes.length > 0 && (
-              <div className="assistant-section">
-                <div className="assistant-section-title">✨ Dynamic Synthesis</div>
-                <div className="ai-echoes-panel pulse-enter" style={{ marginTop: '8px' }}>
-                  <ul className="echoes-list" style={{ paddingLeft: '20px', margin: 0 }}>
-                    {dynamicEchoes.map((line, i) => (
-                      <li key={i} style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{line.replace(/^- /, '')}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            <div className="assistant-section">
-              <div className="assistant-section-title">🌙 Sleep Science</div>
-              <div className="assistant-card">
-                <div className="assistant-card-title">New study on REM cycles</div>
-                <div className="assistant-card-text">
-                  A recent paper suggests REM phases are 15% shorter when exposed to blue light.
-                </div>
-                <a href="#" className="assistant-card-link">View paper →</a>
+      {
+        isChatPanelOpen && (
+          <aside className="ambient-chat-panel">
+            <div className="chat-panel-header">
+              <h3><span className="sparkle">✨</span> Ambient Assistant</h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="icon-btn" onClick={handleSaveConversation} title="Save this conversation">💾</button>
+                {selectedNote && (
+                  <button
+                    className="icon-btn"
+                    onClick={handleGenerateEchoes}
+                    disabled={isGeneratingEchoes}
+                    title="Synthesize Echoes for current note"
+                  >
+                    {isGeneratingEchoes ? '⏳' : '✨'}
+                  </button>
+                )}
+                <button className="close-btn" onClick={() => setIsChatPanelOpen(false)}>✕</button>
               </div>
             </div>
 
-            <div className="assistant-section">
-              <div className="assistant-section-title">✈️ Travel</div>
-              <div className="assistant-card">
-                <div className="assistant-card-title">IATA Battery Rules updated</div>
-                <div className="assistant-card-text">
-                  Lithium-ion batteries over 100Wh now require prior airline approval.
-                </div>
-              </div>
-            </div>
-
-            {ambientChatHistory.length > 0 && (
-              <div className="assistant-section">
-                <div className="assistant-section-title">💬 Conversation</div>
-                {ambientChatHistory.map((msg, idx) => (
-                  <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'user-bubble' : 'ai-bubble'}`}>
-                    <div className="bubble-content">{msg.content}</div>
+            <div className="assistant-content">
+              {dynamicEchoes && dynamicEchoes.length > 0 && (
+                <div className="assistant-section">
+                  <div className="assistant-section-title">✨ Dynamic Synthesis</div>
+                  <div className="ai-echoes-panel pulse-enter" style={{ marginTop: '8px' }}>
+                    <ul className="echoes-list" style={{ paddingLeft: '20px', margin: 0 }}>
+                      {dynamicEchoes.map((line, i) => (
+                        <li key={i} style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{line.replace(/^- /, '')}</li>
+                      ))}
+                    </ul>
                   </div>
-                ))}
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
+                </div>
+              )}
 
-          <form className="chat-panel-input-area" onSubmit={handleAmbientChatSubmit}>
-            <div className="input-wrapper">
-              <input
-                type="text"
-                placeholder="Ask assistant..."
-                value={ambientInput}
-                onChange={e => setAmbientInput(e.target.value)}
-              />
-              <button type="submit" disabled={!ambientInput.trim() || isAmbientTyping}>
-                <span className="material-icons">send</span>
-              </button>
+              <div className="assistant-section">
+                <div className="assistant-section-title">🌙 Sleep Science</div>
+                <div className="assistant-card">
+                  <div className="assistant-card-title">New study on REM cycles</div>
+                  <div className="assistant-card-text">
+                    A recent paper suggests REM phases are 15% shorter when exposed to blue light.
+                  </div>
+                  <a href="#" className="assistant-card-link">View paper →</a>
+                </div>
+              </div>
+
+              <div className="assistant-section">
+                <div className="assistant-section-title">✈️ Travel</div>
+                <div className="assistant-card">
+                  <div className="assistant-card-title">IATA Battery Rules updated</div>
+                  <div className="assistant-card-text">
+                    Lithium-ion batteries over 100Wh now require prior airline approval.
+                  </div>
+                </div>
+              </div>
+
+              {ambientChatHistory.length > 0 && (
+                <div className="assistant-section">
+                  <div className="assistant-section-title">💬 Conversation</div>
+                  {ambientChatHistory.map((msg, idx) => (
+                    <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'user-bubble' : 'ai-bubble'}`}>
+                      <div className="bubble-content">{msg.content}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
-          </form>
-        </aside>
-      )}
+
+            <form className="chat-panel-input-area" onSubmit={handleAmbientChatSubmit}>
+              <div className="input-wrapper">
+                <input
+                  type="text"
+                  placeholder="Ask assistant..."
+                  value={ambientInput}
+                  onChange={e => setAmbientInput(e.target.value)}
+                />
+                <button type="submit" disabled={!ambientInput.trim() || isAmbientTyping}>
+                  <span className="material-icons">send</span>
+                </button>
+              </div>
+            </form>
+          </aside>
+        )
+      }
 
       {/* --- GLOBAL UI --- */}
-      {!isChatPanelOpen && (
-        <button className="chat-toggle-btn" onClick={() => setIsChatPanelOpen(true)}>💬</button>
-      )}
+      {
+        !isChatPanelOpen && (
+          <button className="chat-toggle-btn" onClick={() => setIsChatPanelOpen(true)}>💬</button>
+        )
+      }
 
       <div className="toast-container">
         {toastFlags.map((toast) => (
@@ -2085,47 +2099,49 @@ function App() {
         ))}
       </div>
 
-      {isSettingsOpen && (
-        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Vault Configuration</h2>
-              <button className="close-btn" onClick={() => setIsSettingsOpen(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <fieldset className="settings-fieldset">
-                <legend className="settings-legend">Local Vault Path</legend>
-                <p>Absolute path to your Markdown vault directory.</p>
-                <input
-                  className="setting-input font-mono"
-                  value={vaultPath}
-                  onChange={(e) => setVaultPath(e.target.value)}
-                  placeholder="/Users/username/Vault"
-                />
-              </fieldset>
-
-              <fieldset className="settings-fieldset" style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                <legend className="settings-legend" style={{ color: '#ef4444' }}>Danger Zone</legend>
-                <p>Permanently delete all notes across all taxonomies.</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
+      {
+        isSettingsOpen && (
+          <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Vault Configuration</h2>
+                <button className="close-btn" onClick={() => setIsSettingsOpen(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <fieldset className="settings-fieldset">
+                  <legend className="settings-legend">Local Vault Path</legend>
+                  <p>Absolute path to your Markdown vault directory.</p>
                   <input
                     className="setting-input font-mono"
-                    placeholder="Type 'delete' to confirm"
-                    value={clearConfirmText}
-                    onChange={(e) => setClearConfirmText(e.target.value)}
+                    value={vaultPath}
+                    onChange={(e) => setVaultPath(e.target.value)}
+                    placeholder="/Users/username/Vault"
                   />
-                  <button className="btn btn-warning" onClick={handleClearVault} disabled={isClearing}>
-                    {isClearing ? 'Clearing...' : 'Clear Vault'}
-                  </button>
-                </div>
-              </fieldset>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-save" onClick={handleSaveConfig}>Save Changes</button>
+                </fieldset>
+
+                <fieldset className="settings-fieldset" style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                  <legend className="settings-legend" style={{ color: '#ef4444' }}>Danger Zone</legend>
+                  <p>Permanently delete all notes across all taxonomies.</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      className="setting-input font-mono"
+                      placeholder="Type 'delete' to confirm"
+                      value={clearConfirmText}
+                      onChange={(e) => setClearConfirmText(e.target.value)}
+                    />
+                    <button className="btn btn-warning" onClick={handleClearVault} disabled={isClearing}>
+                      {isClearing ? 'Clearing...' : 'Clear Vault'}
+                    </button>
+                  </div>
+                </fieldset>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-save" onClick={handleSaveConfig}>Save Changes</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       <div className="fab-container">
         {isQuickAddOpen && (
@@ -2147,7 +2163,7 @@ function App() {
         <button className="fab-button" onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}>{isQuickAddOpen ? '✕' : '+'}</button>
       </div>
 
-    </div>
+    </div >
   )
 }
 
