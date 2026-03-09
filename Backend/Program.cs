@@ -21,6 +21,9 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
+// Load .env before building configuration
+DotNetEnv.Env.Load(System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), ".env"));
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

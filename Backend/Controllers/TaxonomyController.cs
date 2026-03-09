@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -12,9 +14,12 @@ namespace Backend.Controllers
     public class TaxonomyController : ControllerBase
     {
         private readonly string _vaultPath;
+        private readonly ILogger<TaxonomyController> _logger;
+        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
 
-        public TaxonomyController()
+        public TaxonomyController(ILogger<TaxonomyController> logger)
         {
+            _logger = logger;
             _vaultPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
             if (!Directory.Exists(_vaultPath))
             {
@@ -23,8 +28,9 @@ namespace Backend.Controllers
         }
 
         // For unit testing isolated vaults
-        protected TaxonomyController(string vaultPath)
+        protected TaxonomyController(string vaultPath, ILogger<TaxonomyController> logger = null)
         {
+            _logger = logger;
             _vaultPath = vaultPath;
             if (!Directory.Exists(_vaultPath))
             {
@@ -178,12 +184,38 @@ namespace Backend.Controllers
         }
 
         [HttpDelete("{category}/notes/{filename}")]
-        public IActionResult DeleteNote(string category, string filename)
+        public async Task<IActionResult> DeleteNote(string category, string filename)
         {
             var filePath = Path.Combine(_vaultPath, category, filename);
             if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
 
-            System.IO.File.Delete(filePath);
+            var archiveDir = Path.Combine(_vaultPath, "_archive");
+            if (!Directory.Exists(archiveDir))
+            {
+                Directory.CreateDirectory(archiveDir);
+            }
+
+            var archivePath = Path.Combine(archiveDir, filename);
+
+            await _writeLock.WaitAsync();
+            try
+            {
+                if (System.IO.File.Exists(archivePath))
+                {
+                    System.IO.File.Delete(archivePath);
+                }
+                System.IO.File.Move(filePath, archivePath);
+                
+                if (_logger != null)
+                {
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Move to Archive", filename, DateTime.UtcNow);
+                }
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
             return Ok(new { message = "Note deleted successfully." });
         }
 
