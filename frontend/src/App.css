@@ -1443,11 +1443,11 @@ textarea.chunked-textarea {
   align-items: center;
 }
 
-.editor-breadcrumbs span {
+.editor-breadcrumbs>span {
   color: var(--text-secondary);
 }
 
-.editor-breadcrumbs span:last-child {
+.editor-breadcrumbs>span:last-child {
   color: var(--text-primary);
 }
 
