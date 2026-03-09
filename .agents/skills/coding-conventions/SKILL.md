@@ -1,25 +1,28 @@
+---
+name: coding-conventions
+description: Load this skill for EVERY Developer task, without exception. Defines mandatory reasoning checkpoints, phased sequencing, and completion standards for all implementation work in the Inboxer project.
+---
+
 # Coding Conventions — Inboxer Developer Skill
 
-This skill must be loaded for every Developer task. It defines mandatory reasoning checkpoints, sequencing discipline, and completion standards for all implementation work in this project.
+This skill must be loaded for every Developer task. Every section below contains steps you must output explicitly before proceeding. These are not internal thoughts — they are required outputs. If you skip a step, you have not followed this skill.
 
-> **Important — read this first**: Every section below contains steps you must output explicitly before proceeding. These are not internal thoughts. They are required outputs. If you skip a step, you have not followed this skill.
+> The rules in `GEMINI.md` are always active and take precedence over this skill.
 
-> **The rules in `GEMINI.md` are always active and take precedence over this skill.**
+> **Gemini note:** You have a large context window and strong reasoning. Use both — read relevant existing files before writing, and reason carefully at each checkpoint. Do not skip steps because they feel obvious. The checkpoints exist precisely because Gemini-generated code tends to drift in predictable ways: touching out-of-scope files, inventing CSS, and assuming the happy path.
 
 ---
 
-## Step 1 — Ambiguity check (only if ambiguities exist)
+## Step 1 — Ambiguity check (before anything else)
 
-**Skip this step entirely if there are no unclear items, no assumptions, and no questions.**
-
-Only output this block if at least one field is non-empty:
+Before writing a spec, a checklist, or any code, output this block in full:
 
 ```
 AMBIGUITY CHECK
 ---------------
-Unclear items: [list anything ambiguous or underspecified]
+Unclear items: [list anything in the request that is ambiguous or underspecified]
 Assumptions I would otherwise make: [list them]
-Questions I need answered before proceeding: [list them]
+Questions I need answered before proceeding: [list them, or "none"]
 ```
 
 If there are open questions, stop and ask. Do not infer. Do not proceed until resolved.
@@ -68,7 +71,7 @@ If you are introducing a deviation with no justification, remove the deviation. 
 
 ## Step 4 — Implementation sequencing
 
-Break implementation into phases. For each phase that does not apply, state explicitly which phase you are skipping and why.
+Break implementation into phases. Output one phase at a time. Wait for **APPROVED** before proceeding to the next phase.
 
 - **Phase 1** — Types and interfaces only. No implementation.
 - **Phase 2** — Backend / service layer. No UI.
@@ -76,11 +79,9 @@ Break implementation into phases. For each phase that does not apply, state expl
 - **Phase 4** — Logic implementation.
 - **Phase 5** — CSS only.
 
-**APPROVED gate rules:**
-- If **two or more phases apply**: output one phase at a time and wait for **APPROVED** before proceeding to the next.
-- If **only one phase applies**: state which phase you are in, state that all others are skipped, and proceed immediately without waiting for APPROVED.
+At the start of each phase, re-state which phase you are in and what it covers. At the end of each phase, stop and wait for APPROVED.
 
-At the start of each phase, re-state which phase you are in and what it covers.
+Not every phase applies to every task — skip phases that are genuinely not applicable, but state explicitly which phases you are skipping and why.
 
 ---
 
@@ -95,7 +96,8 @@ These are absolute. There are no exceptions.
 - **Never** add shadows, gradients, or border-radius values beyond what is defined in design tokens
 - **Never** create a new component when the spec says to extend an existing one
 - **Never** infer missing information — ask instead
-- **Never** introduce new npm packages or NuGet dependencies without explicit Team Lead approval
+- **Never** proceed past a checkpoint without outputting the required block
+- **Never** introduce new npm packages or NuGet dependencies without explicit Team Lead approval and user sign-off
 
 ---
 

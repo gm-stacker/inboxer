@@ -1408,8 +1408,11 @@ textarea.chunked-textarea {
 
 .editor-header {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 24px;
 }
 
@@ -1440,9 +1443,29 @@ textarea.chunked-textarea {
   align-items: center;
 }
 
-.editor-breadcrumbs span:last-child {
-  color: var(--c-text);
-  font-weight: 500;
+.editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-header-actions .icon-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.editor-header-actions .icon-btn:hover {
+  background-color: var(--bg-raised);
+  color: var(--text-primary);
 }
 
 

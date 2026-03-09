@@ -1509,32 +1509,38 @@ function App() {
                     >
                       <span className="material-icons" style={{ fontSize: '20px' }}>arrow_back</span>
                     </button>
-                    <span>Projects</span>
-                    <span>/</span>
-                    <span>{selectedNote.category}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>vault</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>/</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{selectedNote.category}</span>
                   </div>
 
-                  <div className="editor-title-row">
-                    <h2 className="editor-title">
-                      {getDisplayTitle(selectedNote.content, selectedNote.filename)}
-                    </h2>
-
-                    <div className="editor-action-bar">
-                      <span className="editor-meta">{isSaving ? 'Saving...' : 'Saved'}</span>
-                      <button
-                        className="btn btn-outline-amber btn-reanalyze"
-                        onClick={handleReanalyze}
-                        disabled={isReanalyzing}
-                        title="Re-analyze"
-                      >
-                        <span className="material-icons" style={{ fontSize: '16px' }}>
-                          {isReanalyzing ? 'sync' : 'auto_awesome'}
-                        </span>
-                        <span className="reanalyze-label">Re-analyze</span>
-                      </button>
-                    </div>
+                  <div className="editor-header-actions">
+                    <button className="icon-btn" onClick={() => setIsSettingsOpen(true)} title="Vault Config">
+                      <span className="material-icons" style={{ fontSize: '18px' }}>settings</span>
+                    </button>
+                    <button className="icon-btn" title="View Grid">
+                      <span className="material-icons" style={{ fontSize: '18px' }}>grid_view</span>
+                    </button>
+                    <button className="icon-btn" onClick={() => setSelectedNote(null)} title="Home">
+                      <span className="material-icons" style={{ fontSize: '18px' }}>home</span>
+                    </button>
                   </div>
                 </header>
+
+                <div className="editor-action-bar" style={{ marginLeft: '32px', marginBottom: '16px' }}>
+                  <span className="editor-meta">{isSaving ? 'Saving...' : 'Saved'}</span>
+                  <button
+                    className="btn btn-outline-amber btn-reanalyze"
+                    onClick={handleReanalyze}
+                    disabled={isReanalyzing}
+                    title="Re-analyze"
+                  >
+                    <span className="material-icons" style={{ fontSize: '16px' }}>
+                      {isReanalyzing ? 'sync' : 'auto_awesome'}
+                    </span>
+                    <span className="reanalyze-label">Re-analyze</span>
+                  </button>
+                </div>
 
                 {/* Inline Editor */}
 
