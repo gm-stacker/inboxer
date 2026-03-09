@@ -1696,84 +1696,6 @@ function App() {
                   </div>
                 </div>
               </div>
-
-              {/* --- RIGHT PANEL (Phase 3b) --- */}
-              <aside className="editor-right-panel">
-                <div className="right-panel-header">
-                  <span className="sparkle-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
-                  <h4>MEMORY ECHOES</h4>
-                </div>
-                <div className="right-panel-content">
-                  {isGeneratingEchoes ? (
-                    <div className="echoes-skeleton-state">
-                      <div className="echo-card skeleton"></div>
-                      <div className="echo-card skeleton" style={{ animationDelay: '0.15s' }}></div>
-                      <div className="echo-card skeleton" style={{ animationDelay: '0.3s' }}></div>
-                      <button className="btn btn-outline-amber" disabled style={{ width: '100%', justifyContent: 'center', marginTop: '16px', opacity: 0.5 }}>
-                        <span className="material-icons spin" style={{ fontSize: '16px' }}>sync</span>
-                        Synthesizing...
-                      </button>
-                    </div>
-                  ) : !dynamicEchoes ? (
-                    <div className="echoes-empty-state">
-                      <p className="echoes-prompt">Synthesize related memories across your vault.</p>
-                      <button
-                        className="btn btn-outline-amber"
-                        onClick={handleGenerateEchoes}
-                        style={{ justifyContent: 'center', marginTop: '16px', width: '100%' }}
-                      >
-                        <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
-                        Synthesize Echoes
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="echoes-list-ui">
-                      {dynamicEchoes.map((line, i) => (
-                        <div key={i} className="echo-card">
-                          <div className="echo-card-text">{line.replace(/^- /, '')}</div>
-                        </div>
-                      ))}
-                      <button
-                        className="btn btn-outline-amber"
-                        onClick={handleGenerateEchoes}
-                        style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }}
-                      >
-                        <span className="material-icons" style={{ fontSize: '16px' }}>refresh</span>
-                        Refresh Echoes
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Note Properties Sidebar Section */}
-                  {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
-                    <div className="right-panel-properties" style={{ marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--c-border)' }}>
-                      <div
-                        className="properties-header"
-                        onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}
-                        style={{ cursor: 'pointer', userSelect: 'none', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <h4>PROPERTIES {isPropertiesExpanded ? '▾' : '▸'}</h4>
-                      </div>
-                      {isPropertiesExpanded && (
-                        <div className="properties-grid-sidebar">
-                          {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
-                            <div key={key} className="property-sidebar-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                              <span className="property-sidebar-key" style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{key}</span>
-                              <span className="property-sidebar-value" style={{ fontSize: '0.85rem' }}>
-                                {Array.isArray(value) ? (
-                                  <div className="property-tags">
-                                    {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
-                                  </div>
-                                ) : String(value)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </aside>
             </>
           ) : (
             /* --- CAPTURE VIEW --- */
@@ -1977,6 +1899,85 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* --- RIGHT PANEL (Phase 3b) --- */}
+      {selectedNote && (
+        <aside className="editor-right-panel">
+          <div className="right-panel-header">
+            <span className="sparkle-icon" style={{ color: 'var(--c-ai-accent)' }}>✨</span>
+            <h4>MEMORY ECHOES</h4>
+          </div>
+          <div className="right-panel-content">
+            {isGeneratingEchoes ? (
+              <div className="echoes-skeleton-state">
+                <div className="echo-card skeleton"></div>
+                <div className="echo-card skeleton" style={{ animationDelay: '0.15s' }}></div>
+                <div className="echo-card skeleton" style={{ animationDelay: '0.3s' }}></div>
+                <button className="btn btn-echoes" disabled style={{ opacity: 0.5 }}>
+                  <span className="material-icons spin" style={{ fontSize: '16px' }}>sync</span>
+                  Synthesizing...
+                </button>
+              </div>
+            ) : !dynamicEchoes ? (
+              <div className="echoes-empty-state">
+                <p className="echoes-prompt">Synthesize related memories across your vault.</p>
+                <button
+                  className="btn btn-echoes"
+                  onClick={handleGenerateEchoes}
+                >
+                  <span className="material-icons" style={{ fontSize: '16px' }}>auto_awesome</span>
+                  Synthesize Echoes
+                </button>
+              </div>
+            ) : (
+              <div className="echoes-list-ui">
+                {dynamicEchoes.map((line, i) => (
+                  <div key={i} className="echo-card">
+                    <div className="echo-card-label">Echo</div>
+                    <div className="echo-card-text">{line.replace(/^- /, '')}</div>
+                  </div>
+                ))}
+                <button
+                  className="btn btn-echoes"
+                  onClick={handleGenerateEchoes}
+                >
+                  <span className="material-icons" style={{ fontSize: '16px' }}>refresh</span>
+                  Refresh Echoes
+                </button>
+              </div>
+            )}
+
+            {/* Note Properties Sidebar Section */}
+            {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
+              <div className="right-panel-properties" style={{ marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--c-border)' }}>
+                <div
+                  className="properties-header"
+                  onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}
+                  style={{ cursor: 'pointer', userSelect: 'none', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <h4>PROPERTIES {isPropertiesExpanded ? '▾' : '▸'}</h4>
+                </div>
+                {isPropertiesExpanded && (
+                  <div className="properties-grid-sidebar">
+                    {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
+                      <div key={key} className="property-sidebar-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                        <span className="property-sidebar-key" style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{key}</span>
+                        <span className="property-sidebar-value" style={{ fontSize: '0.85rem' }}>
+                          {Array.isArray(value) ? (
+                            <div className="property-tags">
+                              {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
+                            </div>
+                          ) : String(value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* --- AMBIENT ASSISTANT PANEL --- */}
       {isChatPanelOpen && (

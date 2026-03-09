@@ -1303,8 +1303,8 @@ body {
 .editor-right-panel {
   width: 320px;
   min-width: 320px;
-  border-left: 1px solid var(--c-border);
-  background: var(--c-bg);
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -1321,10 +1321,10 @@ body {
 
 .right-panel-header h4 {
   font-family: 'Inter', sans-serif;
-  font-size: 0.75rem;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--c-text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   margin: 0;
 }
@@ -2677,14 +2677,33 @@ textarea.chunked-textarea {
 
 /* --- MEMORY ECHOES --- */
 .echo-card {
-  background: var(--c-sidebar-item-active);
-  border-left: 3px solid var(--c-ai-accent);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ai-accent);
   padding: 12px 14px;
   border-radius: 4px;
   margin-bottom: 12px;
   color: var(--c-text);
   font-size: 0.85rem;
   line-height: 1.5;
+}
+
+.echo-card-label {
+  color: var(--ai-accent);
+}
+
+.echo-card-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.btn-echoes {
+  width: 100%;
+  justify-content: center;
+  margin-top: 16px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .echo-card.skeleton {
