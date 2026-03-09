@@ -92,7 +92,8 @@ const parseNoteContent = (content: string) => {
   const parts = content.split('---');
   if (parts.length >= 3 && parts[0].trim() === '') {
     const frontmatterRaw = parts[1];
-    const body = parts.slice(2).join('---').trim();
+    const rawBody = parts.slice(2).join('---');
+    const body = rawBody.replace(/^\n{1,2}/, '');
     const props: Record<string, any> = {};
     frontmatterRaw.split('\n').forEach(line => {
       const match = line.match(/^([^:]+):(.*)$/);
