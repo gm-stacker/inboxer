@@ -1195,7 +1195,9 @@ body {
 .note-editor {
   flex: 1;
   background: transparent;
-  padding: 40px;
+  padding: 32px;
+  max-width: 768px;
+  margin: 0 auto;
   box-sizing: border-box;
   animation: fadeUp 0.4s ease;
   display: flex;
@@ -1203,6 +1205,7 @@ body {
   gap: 24px;
   height: 100vh;
   overflow-y: auto;
+  width: 100%;
 }
 
 .editor-title-row {
@@ -1436,7 +1439,7 @@ textarea.chunked-textarea {
 }
 
 .editor-breadcrumbs {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
   display: flex;
   gap: 8px;
@@ -1482,10 +1485,23 @@ textarea.chunked-textarea {
   color: var(--c-text-muted);
 }
 
+.editor-title-input {
+  font-size: 20px;
+  font-weight: normal;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  font-family: 'Inter', sans-serif;
+}
+
 .editor-toolbar {
   display: flex;
+  align-items: center;
+  height: 40px;
   gap: 16px;
-  padding: 12px 0;
+  padding: 0;
   border-top: 1px solid var(--c-border);
   border-bottom: 1px solid var(--c-border);
   color: var(--c-text-muted);
@@ -1574,13 +1590,26 @@ textarea.chunked-textarea {
   min-height: 400px;
   background: transparent;
   border: none;
-  color: var(--c-text);
+  color: var(--text-primary);
   font-family: 'Inter', sans-serif;
-  font-size: 1.1rem;
+  font-size: 15px;
   line-height: 1.6;
   resize: none;
   outline: none;
   padding: 0;
+}
+
+.inline-editor ul,
+.inline-editor ol {
+  color: var(--text-secondary);
+}
+
+.inline-editor li {
+  color: var(--text-primary);
+}
+
+.inline-editor li::marker {
+  color: var(--text-secondary);
 }
 
 .editor-footer {
@@ -1611,6 +1640,37 @@ textarea.chunked-textarea {
 .status-value {
   color: var(--c-text);
   font-family: monospace;
+}
+
+.editor-bottom-action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.editor-bottom-action-bar .editor-select {
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  appearance: none;
+}
+
+.editor-bottom-action-bar .btn-secondary {
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.editor-bottom-action-bar .btn-warning {
+  color: #ef4444;
+  border-color: transparent;
+  background: transparent;
 }
 
 .editor-actions {

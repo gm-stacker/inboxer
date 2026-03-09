@@ -1527,21 +1527,16 @@ function App() {
                   </div>
                 </header>
 
-                <div className="editor-action-bar" style={{ marginLeft: '32px', marginBottom: '16px' }}>
-                  <span className="editor-meta">{isSaving ? 'Saving...' : 'Saved'}</span>
-                  <button
-                    className="btn btn-outline-amber btn-reanalyze"
-                    onClick={handleReanalyze}
-                    disabled={isReanalyzing}
-                    title="Re-analyze"
-                  >
-                    <span className="material-icons" style={{ fontSize: '16px' }}>
-                      {isReanalyzing ? 'sync' : 'auto_awesome'}
-                    </span>
-                    <span className="reanalyze-label">Re-analyze</span>
-                  </button>
-                </div>
-
+                <input
+                  className="editor-title-input"
+                  value={parseNoteContent(selectedNote.content).props.title || ''}
+                  onChange={(e) => {
+                    const { props, body } = parseNoteContent(selectedNote.content);
+                    const newProps = { ...props, title: e.target.value };
+                    setSelectedNote({ ...selectedNote, content: joinNoteContent(newProps, body) });
+                  }}
+                  placeholder="Note title..."
+                />
                 {/* Inline Editor */}
 
                 {/* Hidden file input for note editor */}
@@ -1663,23 +1658,41 @@ function App() {
                   })()}
                 </div>
 
-                <div className="editor-actions">
-                  <div className="move-group">
-                    <select
-                      className="editor-select"
-                      value={moveToCategory}
-                      onChange={(e) => setMoveToCategory(e.target.value)}
+                <div className="editor-bottom-action-bar">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <button
+                      className="btn btn-outline-amber btn-reanalyze"
+                      onClick={handleReanalyze}
+                      disabled={isReanalyzing}
+                      title="Re-analyze"
                     >
-                      <option value="">Move to...</option>
-                      {taxonomies.map(cat => (
-                        <option key={cat.name} value={cat.name}>{cat.name}</option>
-                      ))}
-                    </select>
-                    <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
+                      <span className="material-icons" style={{ fontSize: '16px' }}>
+                        {isReanalyzing ? 'sync' : 'auto_awesome'}
+                      </span>
+                      <span className="reanalyze-label">Re-analyze</span>
+                    </button>
+
+                    <div className="move-group" style={{ display: 'flex', gap: '8px' }}>
+                      <select
+                        className="editor-select"
+                        value={moveToCategory}
+                        onChange={(e) => setMoveToCategory(e.target.value)}
+                      >
+                        <option value="">Move to...</option>
+                        {taxonomies.map(cat => (
+                          <option key={cat.name} value={cat.name}>{cat.name}</option>
+                        ))}
+                      </select>
+                      <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
+                    </div>
                   </div>
-                  <div className="action-group" style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+
+                  <div className="action-group" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span className="editor-meta" style={{ marginRight: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{isSaving ? 'Saving...' : 'Saved'}</span>
                     <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
-                    <button className="btn btn-warning" onClick={handleDeleteNote}>Delete</button>
+                    <button className="btn btn-warning icon-btn" onClick={handleDeleteNote} title="Delete note">
+                      <span className="material-icons">delete</span>
+                    </button>
                   </div>
                 </div>
               </div>
