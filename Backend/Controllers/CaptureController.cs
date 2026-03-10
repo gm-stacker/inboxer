@@ -20,6 +20,7 @@ namespace Backend.Controllers
         private readonly string _vaultPath;
         private readonly IGeminiService _gemini;
         private readonly ILogger<CaptureController> _logger;
+        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
 
         public CaptureController(IConfiguration configuration, IGeminiService gemini, ILogger<CaptureController> logger)
         {
@@ -141,7 +142,25 @@ raw_text: {request.RawText}";
                                 if (!string.IsNullOrWhiteSpace(update.ExactSearch) && existingContent.Contains(update.ExactSearch))
                                 {
                                     var newContent = existingContent.Replace(update.ExactSearch, update.ReplaceWith);
-                                    await System.IO.File.WriteAllTextAsync(updatePath, newContent);
+                                    
+                                    await _writeLock.WaitAsync();
+                                    try
+                                    {
+                                        var tempPath = updatePath + ".tmp";
+                                        await System.IO.File.WriteAllTextAsync(tempPath, newContent);
+                                        System.IO.File.Replace(tempPath, updatePath, updatePath + ".bak");
+                                        _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Apply AI Note Update", update.SourceFile, DateTime.UtcNow);
+                                    }
+                                    catch
+                                    {
+                                        var tempPath = updatePath + ".tmp";
+                                        if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                                        throw;
+                                    }
+                                    finally
+                                    {
+                                        _writeLock.Release();
+                                    }
                                 }
                             }
                         }
@@ -289,7 +308,25 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
 
                 string safeFileName = Guid.NewGuid().ToString("N").Substring(0, 6) + "_" + file.FileName.Replace(" ", "_");
                 string savedFilePath = Path.Combine(categoryPath, safeFileName);
-                await System.IO.File.WriteAllBytesAsync(savedFilePath, fileBytes);
+                
+                await _writeLock.WaitAsync();
+                try
+                {
+                    var tempFilePath = savedFilePath + ".tmp";
+                    await System.IO.File.WriteAllBytesAsync(tempFilePath, fileBytes);
+                    System.IO.File.Move(tempFilePath, savedFilePath, overwrite: true);
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Save Uploaded Media", safeFileName, DateTime.UtcNow);
+                }
+                catch
+                {
+                    var tempFilePath = savedFilePath + ".tmp";
+                    if (System.IO.File.Exists(tempFilePath)) System.IO.File.Delete(tempFilePath);
+                    throw;
+                }
+                finally
+                {
+                    _writeLock.Release();
+                }
 
                 // Build note body
                 string noteBody = "";
@@ -483,7 +520,25 @@ Conversation History:
                                      "tags: [ai, conversation]" + Environment.NewLine +
                                      "---" + Environment.NewLine + Environment.NewLine;
 
-            await System.IO.File.WriteAllTextAsync(filePath, yamlFrontmatter + request.RawText);
+            await _writeLock.WaitAsync();
+            try
+            {
+                var tempPath = filePath + ".tmp";
+                await System.IO.File.WriteAllTextAsync(tempPath, yamlFrontmatter + request.RawText);
+                System.IO.File.Move(tempPath, filePath, overwrite: true);
+                _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Save AI Conversation", filename, DateTime.UtcNow);
+            }
+            catch
+            {
+                var tempPath = filePath + ".tmp";
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                throw;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
             return Ok(new { message = "Conversation saved successfully.", filename });
         }
 
@@ -541,7 +596,36 @@ Conversation History:
                                      wineYaml +
                                      "---" + Environment.NewLine + Environment.NewLine;
 
-            await System.IO.File.WriteAllTextAsync(filePath, yamlFrontmatter + rawText);
+            await _writeLock.WaitAsync();
+            try
+            {
+                var tempPath = filePath + ".tmp";
+                await System.IO.File.WriteAllTextAsync(tempPath, yamlFrontmatter + rawText);
+                
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Replace(tempPath, filePath, filePath + ".bak");
+                }
+                else
+                {
+                    System.IO.File.Move(tempPath, filePath, overwrite: true);
+                }
+                
+                if (_logger != null)
+                {
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Process Capture Note", $"{routingData.SuggestedFilename}.md", DateTime.UtcNow);
+                }
+            }
+            catch
+            {
+                var tempPath = filePath + ".tmp";
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                throw;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
 
         private async Task<string> GetVaultContextAsync()

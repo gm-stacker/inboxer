@@ -179,7 +179,29 @@ namespace Backend.Controllers
             var filePath = Path.Combine(_vaultPath, category, filename);
             if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
 
-            await System.IO.File.WriteAllTextAsync(filePath, request.Content);
+            await _writeLock.WaitAsync();
+            try
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                await System.IO.File.WriteAllTextAsync(tempPath, request.Content);
+                System.IO.File.Replace(tempPath, filePath, filePath + ".bak");
+                
+                if (_logger != null)
+                {
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Update Note", filename, DateTime.UtcNow);
+                }
+            }
+            catch
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                throw;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
             return Ok(new { message = "Note updated successfully." });
         }
 
@@ -238,7 +260,30 @@ namespace Backend.Controllers
 
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = AddDoneToFrontmatter(content);
-            await System.IO.File.WriteAllTextAsync(filePath, updatedContent);
+            
+            await _writeLock.WaitAsync();
+            try
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                await System.IO.File.WriteAllTextAsync(tempPath, updatedContent);
+                System.IO.File.Replace(tempPath, filePath, filePath + ".bak");
+                
+                if (_logger != null)
+                {
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Mark Note As Done", filename, DateTime.UtcNow);
+                }
+            }
+            catch
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                throw;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
             return Ok(new { message = "Note marked as done." });
         }
 
@@ -316,7 +361,30 @@ namespace Backend.Controllers
 
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = RemoveDoneFromFrontmatter(content);
-            await System.IO.File.WriteAllTextAsync(filePath, updatedContent);
+            
+            await _writeLock.WaitAsync();
+            try
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                await System.IO.File.WriteAllTextAsync(tempPath, updatedContent);
+                System.IO.File.Replace(tempPath, filePath, filePath + ".bak");
+                
+                if (_logger != null)
+                {
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Unmark Note As Done", filename, DateTime.UtcNow);
+                }
+            }
+            catch
+            {
+                var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+                throw;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
             return Ok(new { message = "Note unmarked as done." });
         }
 
