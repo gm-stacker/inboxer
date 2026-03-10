@@ -2,116 +2,11 @@ import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactEl
 import type { FormEvent } from 'react';
 import './App.css'
 import TimelineTableToggle from './components/TimelineTableToggle';
-
-interface TaxonomyCategory {
-  name: string
-  noteCount: number
-}
-
-interface NotePreview {
-  filename: string
-  preview: string
-  createdAt: string
-}
-
-interface ValidationDetails {
-  action: string
-  targetCategory: string
-  confidenceScore: number
-  suggestedFilename: string
-  frontmatter: {
-    type: string
-    tags: string[]
-    extractedDate?: string
-    entities: string[]
-    metrics: Record<string, any>
-  }
-  footnotes: string[]
-  updates?: any[]
-  duplicates?: string[]
-}
-
-interface SelectedNote {
-  filename: string
-  content: string
-  category: string
-}
-
-interface SearchResult {
-  category: string
-  filename: string
-  title: string
-  preview: string
-}
-
-interface CaptureQueueItem {
-  id: string;
-  text: string;
-  category: string;
-  status: 'pending' | 'processing' | 'done' | 'error';
-  result?: any;
-  error?: string;
-  file?: File;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-  summary?: string
-  trend?: string
-  // Legacy fields (kept for backwards compatibility if needed during dev)
-  timeline?: Array<{ date: string, event: string, source_file?: string }>; // for assistant
-  undetermined_items?: Array<{ event: string, source_file?: string }>; // for assistent
-}
-
-interface TripBriefing {
-  tasks: string[];
-  pastExperiences: string[];
-  people: string[];
-  prepare: string[];
-}
-
-interface ChatTurn {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface ToastFlag {
-  id: string;
-  message: string;
-}
-
-interface MorningBriefing {
-  tasks: string[];
-  patterns: string;
-  focus: string;
-}
+import type { TaxonomyCategory, NotePreview, ValidationDetails, SelectedNote, SearchResult, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
+import { parseNoteContent, joinNoteContent, getDisplayTitle } from './utils/noteUtils';
 
 // --- HELPERS ---
-const parseNoteContent = (content: string) => {
-  if (!content) return { props: {} as Record<string, any>, body: '' };
-  const parts = content.split('---');
-  if (parts.length >= 3 && parts[0].trim() === '') {
-    const frontmatterRaw = parts[1];
-    const rawBody = parts.slice(2).join('---');
-    const body = rawBody.replace(/^\n{1,2}/, '');
-    const props: Record<string, any> = {};
-    frontmatterRaw.split('\n').forEach(line => {
-      const match = line.match(/^([^:]+):(.*)$/);
-      if (match) {
-        const key = match[1].trim();
-        const value = match[2].trim();
-        if (value.startsWith('[') && value.endsWith(']')) {
-          props[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^'|'$/g, '').replace(/^"|"$/g, ''));
-        } else {
-          props[key] = value;
-        }
-      }
-    });
-    return { props, body };
-  }
-  return { props: {} as Record<string, any>, body: content };
-};
+
 
 // Parses [TABLE] and [SOURCES] blocks from query summary into React elements
 const parseQuerySummary = (
@@ -222,37 +117,7 @@ const parseQuerySummary = (
   return <>{elements}</>;
 };
 
-const joinNoteContent = (props: Record<string, any>, body: string) => {
-  if (Object.keys(props).length === 0) return body;
-  let yaml = '---\n';
-  for (const [key, value] of Object.entries(props)) {
-    if (Array.isArray(value)) {
-      yaml += `${key}: [${value.join(', ')}]\n`;
-    } else {
-      yaml += `${key}: ${value}\n`;
-    }
-  }
-  yaml += '---\n\n';
-  return yaml + body;
-};
-
-const getDisplayTitle = (content: string, fallback: string) => {
-  if (!content) return fallback.replace('.md', '').replaceAll('_', ' ');
-  const { body } = parseNoteContent(content);
-  const lines = body.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed) {
-      let title = trimmed.replace(/^#+\s+/, ''); // Strip Markdown headers
-      title = title.replace(/^\[\d{2}-\d{2}-\d{4} \d{2}:\d{2}\]\s*/, ''); // Strip timestamp tags
-      return title || fallback.replace('.md', '').replaceAll('_', ' ');
-    }
-  }
-  return fallback.replace('.md', '').replaceAll('_', ' ');
-};
-
-// Module-level variable to persist dismissal across component re-renders
-let sessionDismissedDate: string | null = null;
+// Variables moved to session storage
 
 function App() {
   const [inputText, setInputText] = useState('')
@@ -392,7 +257,7 @@ function App() {
 
     // Check morning briefing
     const today = new Date().toISOString().split('T')[0];
-    if (sessionDismissedDate !== today) {
+    if (sessionStorage.getItem('sessionDismissedDate') !== today) {
       fetchMorningBriefing();
     }
   }, [])
@@ -415,7 +280,7 @@ function App() {
 
   const handleDismissBriefing = () => {
     setIsBriefingVisible(false);
-    sessionDismissedDate = new Date().toISOString().split('T')[0];
+    sessionStorage.setItem('sessionDismissedDate', new Date().toISOString().split('T')[0]);
   }
 
   useEffect(() => {
@@ -961,12 +826,8 @@ function App() {
     const noteCategory = selectedNote.category;
     const noteFilename = selectedNote.filename;
     let rawText = selectedNote.content;
-    if (rawText.startsWith('---')) {
-      const endMatch = rawText.indexOf('\n---');
-      if (endMatch !== -1) {
-        rawText = rawText.substring(endMatch + 4).trim();
-      }
-    }
+    const parsed = parseNoteContent(rawText);
+    rawText = parsed.body || rawText;
 
     try {
       await fetch(`${API_BASE_URL}/api/taxonomy/${noteCategory}/notes/${noteFilename}`, {
@@ -1047,7 +908,7 @@ function App() {
         await handleSelectCategory(selectedCategory)
       }
       if (selectedNote && selectedNote.filename === data.filename) {
-        setSelectedNote(prev => prev ? { ...prev, category: targetCategory } : null)
+        setSelectedNote((prev: SelectedNote | null) => prev ? { ...prev, category: targetCategory } : null)
       }
 
     } catch (err) {
@@ -1069,7 +930,7 @@ function App() {
         transcript += `**AI:** ${msg.summary}\n\n`;
         if (msg.timeline && msg.timeline.length > 0) {
           transcript += `*Timeline:*\n`;
-          msg.timeline.forEach(t => {
+          msg.timeline.forEach((t: { date: string, event: string, source_file?: string }) => {
             transcript += `- **${t.date}**: ${t.event}\n`;
           });
           transcript += `\n`;
@@ -1118,14 +979,14 @@ function App() {
         const result: TripBriefing = await response.json();
 
         let summaryHtml = '';
-        if (result.tasks && result.tasks.length > 0) summaryHtml += `<h4>✅ Tasks & Reminders</h4 > <ul>${result.tasks.map(t => '<li>' + t + '</li>').join('')}</ul>`;
-        if (result.pastExperiences && result.pastExperiences.length > 0) summaryHtml += `<h4>📍 Past Experiences</h4 > <ul>${result.pastExperiences.map(t => '<li>' + t + '</li>').join('')}</ul>`;
-        if (result.people && result.people.length > 0) summaryHtml += `<h4>👤 People & Connections</h4 > <ul>${result.people.map(t => '<li>' + t + '</li>').join('')}</ul>`;
-        if (result.prepare && result.prepare.length > 0) summaryHtml += `<h4>🎒 Bring or Prepare</h4 > <ul>${result.prepare.map(t => '<li>' + t + '</li>').join('')}</ul>`;
+        if (result.tasks && result.tasks.length > 0) summaryHtml += `<h4>✅ Tasks & Reminders</h4 > <ul>${result.tasks.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+        if (result.pastExperiences && result.pastExperiences.length > 0) summaryHtml += `<h4>📍 Past Experiences</h4 > <ul>${result.pastExperiences.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+        if (result.people && result.people.length > 0) summaryHtml += `<h4>👤 People & Connections</h4 > <ul>${result.people.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+        if (result.prepare && result.prepare.length > 0) summaryHtml += `<h4>🎒 Bring or Prepare</h4 > <ul>${result.prepare.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
 
         if (!summaryHtml) summaryHtml = "<p>No notable insights found for this destination.</p>";
 
-        setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: summaryHtml }]);
+        setChatHistory((prev: ChatMessage[]) => [...prev, { role: 'assistant', content: '', summary: summaryHtml }]);
       } else {
         setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: 'Error generating trip briefing.' }]);
       }
@@ -1529,7 +1390,7 @@ function App() {
                   <div className="briefing-section">
                     <h4 className="section-title">Tasks & Reminders</h4>
                     <ul className="briefing-checklist">
-                      {briefingData.tasks.map((task, i) => <li key={i}><span className="check-icon">✓</span> {task}</li>)}
+                      {briefingData.tasks.map((task: string, i: number) => <li key={i}><span className="check-icon">✓</span> {task}</li>)}
                     </ul>
                   </div>
                   <div className="briefing-section">
@@ -1632,7 +1493,7 @@ function App() {
                     const { props, body } = parseNoteContent(selectedNote.content);
                     const chunks = body.split(/(!\[\[.*?\]\])/g);
 
-                    return chunks.map((chunk, i) => {
+                    return chunks.map((chunk: string, i: number) => {
                       if (chunk.startsWith('![[') && chunk.endsWith(']]')) {
                         const imgName = chunk.slice(3, -2);
                         let imgUrl = `${API_BASE_URL}/api/capture/media/${encodeURIComponent(selectedNote.category)}/${encodeURIComponent(imgName)}`;
@@ -1957,7 +1818,7 @@ function App() {
                           : (msg.summary || msg.content)}
                         {msg.timeline && msg.timeline.length > 0 && (
                           <div className="query-timeline" style={{ marginTop: '16px' }}>
-                            {msg.timeline.map((t, i) => (
+                            {msg.timeline.map((t: { date: string, event: string, source_file?: string }, i: number) => (
                               <div key={i} className="timeline-item clickable-item" onClick={() => t.source_file && handleSelectSourceFile(t.source_file)}>
                                 <div className="timeline-dot"></div>
                                 <div className="timeline-content">
@@ -2138,7 +1999,7 @@ function App() {
         {toastFlags.map((toast) => (
           <div key={toast.id} className="toast-flag">
             <div className="toast-content">
-              {toast.message.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, i) => {
+              {toast.message.split(/(\[[^\]]+\]\([^)]+\))/g).map((part: string, i: number) => {
                 const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
                 return linkMatch
                   ? <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="toast-link">{linkMatch[1]}</a>
