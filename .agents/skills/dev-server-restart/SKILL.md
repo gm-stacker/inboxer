@@ -39,12 +39,12 @@ Never edit `vite.config.ts` while Vite is running.
 
 ---
 
-## Backend Restart (.NET on port 5177)
+## Backend Restart (.NET on port 6130)
 
 ```bash
 # Kill existing backend processes
 pkill -f "dotnet run|dotnet.*Backend" 2>/dev/null
-lsof -ti:5177 | xargs kill -9 2>/dev/null
+lsof -ti:6130 | xargs kill -9 2>/dev/null
 sleep 1
 
 # Start in background, log to file
@@ -76,11 +76,11 @@ grep -i "error\|fail\|exception" /tmp/backend.log | head -20
 curl -s --max-time 3 http://127.0.0.1:5173/ | head -3
 
 # Backend responding
-curl -s --max-time 3 http://127.0.0.1:5177/health
+curl -s --max-time 3 http://127.0.0.1:6130/health
 
 # Ports listening
 lsof -i:5173 | grep LISTEN
-lsof -i:5177 | grep LISTEN
+lsof -i:6130 | grep LISTEN
 ```
 
 ---
@@ -90,7 +90,7 @@ lsof -i:5177 | grep LISTEN
 ```bash
 # Find what's on a port
 lsof -i:5173
-lsof -i:5177
+lsof -i:6130
 
 # Kill specifically (replace PID)
 kill -9 [PID]

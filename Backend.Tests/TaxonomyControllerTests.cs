@@ -162,24 +162,34 @@ public sealed class TaxonomyControllerTests : IDisposable
 
     // ── DeleteNote ────────────────────────────────────────────────────────────
 
-    [Fact(DisplayName = "DeleteNote removes file from disk")]
-    public void DeleteNote_RemovesFile()
+    [Fact(DisplayName = "DeleteNote archives file to per-category _archive subfolder")]
+    public async Task DeleteNote_ArchivesToPerCategorySubfolder()
     {
         var catDir = Path.Combine(_vaultRoot, "Inbox");
         Directory.CreateDirectory(catDir);
         var filePath = Path.Combine(catDir, "temp.md");
         File.WriteAllText(filePath, "delete me");
 
-        var result = BuildController().DeleteNote("Inbox", "temp.md");
+        var result = await BuildController().DeleteNote("Inbox", "temp.md");
         Assert.IsType<OkObjectResult>(result);
+
+        // Original file must be gone
         Assert.False(File.Exists(filePath));
+
+        // Archived file must exist at {_vaultPath}/{category}/_archive/{filename}
+        var expectedArchivePath = Path.Combine(_vaultRoot, "Inbox", "_archive", "temp.md");
+        Assert.True(File.Exists(expectedArchivePath), $"Archived file not found at {expectedArchivePath}");
+
+        // Verify content is preserved
+        var archivedContent = await File.ReadAllTextAsync(expectedArchivePath);
+        Assert.Equal("delete me", archivedContent);
     }
 
     [Fact(DisplayName = "DeleteNote returns 404 when file does not exist")]
-    public void DeleteNote_Returns404_WhenNotFound()
+    public async Task DeleteNote_Returns404_WhenNotFound()
     {
         Directory.CreateDirectory(Path.Combine(_vaultRoot, "Inbox"));
-        var result = BuildController().DeleteNote("Inbox", "ghost.md");
+        var result = await BuildController().DeleteNote("Inbox", "ghost.md");
         Assert.IsType<NotFoundObjectResult>(result);
     }
 

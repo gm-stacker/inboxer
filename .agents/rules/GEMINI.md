@@ -13,7 +13,7 @@
 - AI: Gemini 3.1 Pro (High thinking) via Antigravity
 - Data: Local Obsidian vault (`.md` files with YAML frontmatter)
 - Frontend: `http://127.0.0.1:5173` (NEVER `localhost:5173`)
-- Backend: `http://127.0.0.1:5177`
+- Backend: `http://127.0.0.1:6130`
 - Workflows: `.agent/workflows/` — triggered via `/command-name`
 - Skills: `.agent/skills/` — auto-loaded by agent intent matching
 - Rules: `.agent/rules/` — always loaded (this file)
@@ -135,7 +135,7 @@ sleep 1 && cd /Users/brucechoi/Desktop/inboxer/frontend && nohup npm run dev > /
 **Backend:**
 ```bash
 pkill -f "dotnet run|dotnet.*Backend" 2>/dev/null
-lsof -ti:5177 | xargs kill -9 2>/dev/null
+lsof -ti:6130 | xargs kill -9 2>/dev/null
 sleep 1 && cd /Users/brucechoi/Desktop/inboxer/Backend && nohup dotnet run > /tmp/backend.log 2>&1 &
 ```
 - NEVER run any command after the start command — SIGHUP will silently kill the process

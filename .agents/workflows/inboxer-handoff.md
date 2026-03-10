@@ -112,7 +112,7 @@ sleep 1 && cd /Users/brucechoi/Desktop/inboxer/frontend && nohup npm run dev > /
 **Backend restart:**
 ```bash
 pkill -f "dotnet run|dotnet.*Backend" 2>/dev/null
-lsof -ti:5177 | xargs kill -9 2>/dev/null
+lsof -ti:6130 | xargs kill -9 2>/dev/null
 sleep 1 && cd /Users/brucechoi/Desktop/inboxer/Backend && nohup dotnet run > /tmp/backend.log 2>&1 &
 ```
 - NEVER run any command after the start command — SIGHUP kills the process silently

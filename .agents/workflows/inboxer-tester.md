@@ -77,7 +77,7 @@ git log --oneline -3
 lsof -i:5173 | grep LISTEN
 
 # Backend running
-lsof -i:5177 | grep LISTEN
+lsof -i:6130 | grep LISTEN
 ```
 
 If infrastructure checks fail: report as FAILED infrastructure issue and escalate immediately. Do not attempt further testing.

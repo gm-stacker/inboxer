@@ -53,7 +53,7 @@ Only write-enable the vault volume when a specific vault-write feature is being 
 Every service must have a health check:
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:5177/health"]
+  test: ["CMD", "curl", "-f", "http://localhost:6130/health"]
   interval: 30s
   timeout: 10s
   retries: 3
@@ -61,7 +61,7 @@ healthcheck:
 
 ### 5. Port bindings
 - Frontend: `5173:5173` (dev), `80:80` (prod)
-- Backend: `5177:5177`
+- Backend: `6130:6130`
 - Never bind `0.0.0.0` in production without explicit firewall configuration
 
 ### 6. DEPLOYMENT.md requirements

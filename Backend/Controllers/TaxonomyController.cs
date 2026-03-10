@@ -189,7 +189,7 @@ namespace Backend.Controllers
             var filePath = Path.Combine(_vaultPath, category, filename);
             if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
 
-            var archiveDir = Path.Combine(_vaultPath, "_archive");
+            var archiveDir = Path.Combine(_vaultPath, category, "_archive");
             if (!Directory.Exists(archiveDir))
             {
                 Directory.CreateDirectory(archiveDir);
@@ -204,7 +204,7 @@ namespace Backend.Controllers
                 
                 if (_logger != null)
                 {
-                    _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Move to Archive", filename, DateTime.UtcNow);
+                    _logger.LogInformation("Vault write: {Operation} on {Filename} to {ArchivePath} at {Timestamp}", "Move to Archive", filename, archivePath, DateTime.UtcNow);
                 }
             }
             finally
