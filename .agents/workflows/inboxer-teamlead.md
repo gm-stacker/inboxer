@@ -118,6 +118,14 @@ Restate the task as a numbered list of exactly what will be built or changed.
 Nothing ambiguous. No "or" branches. No assumptions unlisted.
 
 Wait for explicit user approval before proceeding to Block 5.
+
+### Deferred scope
+If any item from the user's request is intentionally excluded from this plan, list it explicitly:
+
+DEFERRED (out of scope for this task):
+- [item] — reason: [why deferred, suggested follow-up task name]
+
+Never silently omit a requirement. If it's not in the plan and not in DEFERRED, it doesn't exist.
 Do not invoke /inboxer-spec until the user says APPROVED.
 
 ---

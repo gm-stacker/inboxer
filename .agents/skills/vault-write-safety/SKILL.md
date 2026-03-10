@@ -33,6 +33,10 @@ if (new FileInfo(tempPath).Length == 0) throw new InvalidOperationException("Wri
 File.Replace(tempPath, path, path + ".bak");
 ```
 
+- **Filesystem Boundaries:** The `.tmp` file MUST be created in the exact same directory as the target file. Do not use `/tmp` or system temp directories — cross-device atomic moves fail on Docker volume mounts.
+- **Backups:** Always pass a backup file path to `File.Replace`. Example: `File.Replace(tempFile, targetFile, targetFile + ".bak");`
+- **New Files:** Use `File.Move(tempFile, targetFile, overwrite: true)` if the target file does not yet exist.
+
 ### 2. Never delete vault files — archive only
 Do not implement hard delete for vault notes. Use the `done` tag or a dedicated archive mechanism.
 If a delete feature is required, it must:
@@ -53,12 +57,10 @@ When writing updated frontmatter, the note body (everything after `---\n`) must 
 Never re-encode or normalise line endings — Obsidian is sensitive to these.
 
 ### 5. Never write while vault cache is being read
-Vault writes must use a lock or queue to prevent concurrent read/write on the same file.
-```csharp
-private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
-await _writeLock.WaitAsync();
-try { /* write */ } finally { _writeLock.Release(); }
-```
+Vault writes must use a lock to prevent concurrent read/write corruption.
+- **Lock Scoping:** A `private static SemaphoreSlim` on a controller only serializes writes within that controller class. Concurrent writes from different controllers (e.g. CaptureController and TaxonomyController writing simultaneously) will bypass each other's lock entirely.
+- Use a centralized lock injected as a singleton (e.g. `VaultWriteLocker` service) to serialize all vault writes across the entire application.
+- If a global lock is not yet implemented, document the static controller lock as a known architectural limitation in the task walkthrough.
 
 ### 6. Log all vault writes
 Every write to the vault must be logged:
