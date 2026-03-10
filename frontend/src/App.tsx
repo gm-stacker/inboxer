@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactEl
 import type { FormEvent } from 'react';
 import './App.css'
 import TimelineTableToggle from './components/TimelineTableToggle';
-import type { TaxonomyCategory, NotePreview, ValidationDetails, SelectedNote, SearchResult, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
+import type { ValidationDetails, SelectedNote, SearchResult, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
 import { parseNoteContent, joinNoteContent, getDisplayTitle } from './utils/noteUtils';
+import { useTaxonomy } from './hooks/useTaxonomy';
 
 // --- HELPERS ---
 
@@ -134,18 +135,12 @@ function App() {
   });
 
 
-  // Taxonomies State
-  const [taxonomies, setTaxonomies] = useState<TaxonomyCategory[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const activeCategoryFetchRef = useRef<string | null>(null)
-  const [categoryNotes, setCategoryNotes] = useState<NotePreview[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
-  const [isSearching, setIsSearching] = useState(false)
-  const [isRenaming, setIsRenaming] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5177';
 
-  // Memory Echo State
+
+
+  const [isRenaming, setIsRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [lastCaptureDetails, setLastCaptureDetails] = useState<ValidationDetails | null>(null)
 
   // Editor State
@@ -185,8 +180,6 @@ function App() {
   // Morning Briefing State
   const [briefingData, setBriefingData] = useState<MorningBriefing | null>(null)
   const [isBriefingVisible, setIsBriefingVisible] = useState(false)
-
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5177';
 
   // Morning Briefing State
   const [isBriefingExpanded, setIsBriefingExpanded] = useState(false)
@@ -241,6 +234,25 @@ function App() {
   const [isAmbientTyping, setIsAmbientTyping] = useState(false)
   const [toastFlags, setToastFlags] = useState<ToastFlag[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Taxonomies State (Hook)
+  const {
+    taxonomies,
+    selectedCategory, setSelectedCategory,
+    categoryNotes, setCategoryNotes,
+    searchQuery, setSearchQuery,
+    searchResults,
+    isSearching,
+    fetchTaxonomy,
+    handleSelectCategory,
+    handleSelectSourceFile
+  } = useTaxonomy({
+    API_BASE_URL,
+    setSelectedNote,
+    setToastFlags,
+    setIsPropertiesExpanded,
+    setDynamicEchoes
+  });
 
   // Vault Config State
   const [vaultPath, setVaultPath] = useState('')
@@ -356,44 +368,8 @@ function App() {
     }
   }
 
-  const fetchTaxonomy = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy`)
-      if (res.ok) {
-        const data = await res.json()
-        setTaxonomies(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch taxonomy', err)
-    }
-  }
+  // Full-text search and Queue Processing Effects
 
-  // Full-text search effect — debounced 300 ms
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults(null)
-      setIsSearching(false)
-      return
-    }
-    setIsSearching(true)
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/taxonomy/search?q=${encodeURIComponent(searchQuery.trim())}`)
-        if (res.ok) {
-          const data: SearchResult[] = await res.json()
-          setSearchResults(data)
-        } else {
-          setSearchResults([])
-        }
-      } catch (err) {
-        console.error('Search failed', err)
-        setSearchResults([])
-      } finally {
-        setIsSearching(false)
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery, API_BASE_URL])
 
   // Queue Processing Effect
   useEffect(() => {
@@ -458,28 +434,7 @@ function App() {
     }
   }
 
-  const handleSelectCategory = async (categoryName: string) => {
-    if (selectedCategory === categoryName) {
-      setSelectedCategory(null)
-      setCategoryNotes([])
-      activeCategoryFetchRef.current = null;
-      return
-    }
-    setSelectedCategory(categoryName)
-    setCategoryNotes([])
-    activeCategoryFetchRef.current = categoryName;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${categoryName}/notes`)
-      if (res.ok) {
-        const data = await res.json()
-        if (activeCategoryFetchRef.current === categoryName) {
-          setCategoryNotes(data)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch notes', err)
-    }
-  }
+  // handleSelectCategory moved to hook
 
   const handleRename = async (oldName: string) => {
     if (!renameValue.trim() || renameValue === oldName) {
@@ -524,54 +479,7 @@ function App() {
     }
   }
 
-  const handleSelectSourceFile = async (sourceFile: string) => {
-    if (!sourceFile) return;
-    const parts = sourceFile.split('/');
-    if (parts.length !== 2) return;
-    const categoryName = parts[0];
-    const filename = parts[1];
-
-    // Auto-select category so right sidebar knows context
-    setSelectedCategory(categoryName);
-    setCategoryNotes([]);
-    activeCategoryFetchRef.current = categoryName;
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${categoryName}/notes/${filename}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedNote({ filename: data.filename, content: data.content, category: data.category });
-        // Update to actual category returned by fuzzy search
-        if (data.category !== categoryName) setSelectedCategory(data.category);
-        setDynamicEchoes(null);
-        setIsPropertiesExpanded(false);
-      } else {
-        setSelectedNote(null);
-        // Show toast with Obsidian fallback — don't use alert()
-        const obsidianUri = `obsidian://search?query=${encodeURIComponent(filename.replace('.md', ''))}`;
-        setToastFlags(prev => [...prev, {
-          id: `note-404-${Date.now()}`,
-          message: `📄 Note not found in app: ${sourceFile} — [Open in Obsidian](${obsidianUri})`
-        }]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch source file note', err);
-      setSelectedNote(null);
-    }
-
-    // Auto-load category notes to keep the sidebar in sync
-    try {
-      const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${categoryName}/notes`);
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        if (activeCategoryFetchRef.current === categoryName) {
-          setCategoryNotes(catData);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch category notes', err);
-    }
-  }
+  // handleSelectSourceFile moved to hook
 
   // Auto-Save Effect
   useEffect(() => {
@@ -593,8 +501,10 @@ function App() {
           const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes`);
           if (catRes.ok) {
             const data = await catRes.json();
-            // ONLY update if we are still looking at the same category that was saved
-            if (activeCategoryFetchRef.current === selectedNote.category) {
+            // In the refactored hook, we can't reliably check activeCategoryFetchRef synchronously here 
+            // without bringing it into the dependency array. But we can ensure we only update if 
+            // selectedCategory matches the saved note's category.
+            if (selectedCategory === selectedNote.category) {
               setCategoryNotes(data);
             }
           }
@@ -625,7 +535,7 @@ function App() {
         const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes`)
         if (catRes.ok) {
           const data = await catRes.json()
-          if (activeCategoryFetchRef.current === selectedNote.category) {
+          if (selectedCategory === selectedNote.category) {
             setCategoryNotes(data)
           }
         }
@@ -1208,7 +1118,7 @@ function App() {
                           onClick={(e) => {
                             e.stopPropagation()
                             setSelectedCategory(cat)
-                            activeCategoryFetchRef.current = cat
+                            setSelectedCategory(cat)
                             handleSelectNote(n.filename)
                           }}
                         >
@@ -1321,7 +1231,7 @@ function App() {
                       className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
                       onClick={() => {
                         setSelectedCategory(n.category);
-                        activeCategoryFetchRef.current = n.category;
+                        setSelectedCategory(n.category);
                         fetch(`${API_BASE_URL}/api/taxonomy/${n.category}/notes/${n.filename}`)
                           .then(r => r.json())
                           .then(d => setSelectedNote({ filename: d.filename, content: d.content, category: d.category }))
