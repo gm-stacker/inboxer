@@ -13,7 +13,7 @@ export interface UseTaxonomyReturn {
     selectedCategory: string | null;
     setSelectedCategory: (cat: string | null) => void;
     categoryNotes: NotePreview[];
-    setCategoryNotes: (notes: NotePreview[]) => void;
+    setCategoryNotes: Dispatch<SetStateAction<NotePreview[]>>;
     searchQuery: string;
     setSearchQuery: (q: string) => void;
     searchResults: SearchResult[] | null;

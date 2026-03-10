@@ -18,13 +18,13 @@ For all local testing use bash:
 ```bash
 # Check port is actually listening
 lsof -i:5173 | grep LISTEN
-lsof -i:5177 | grep LISTEN
+lsof -i:6130 | grep LISTEN
 
 # Frontend health check
 curl -s --max-time 3 http://127.0.0.1:5173/ | head -5
 
 # Backend health check
-curl -s --max-time 3 http://127.0.0.1:5177/api/capture
+curl -s --max-time 3 http://127.0.0.1:6130/api/capture
 
 # Run test suite
 cd /Users/brucechoi/Desktop/inboxer/frontend && npm test
