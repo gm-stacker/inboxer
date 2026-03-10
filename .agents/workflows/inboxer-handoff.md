@@ -70,19 +70,22 @@ Instruct Tester: verify against acceptance criteria only — no scope expansion.
 
 ## Step 4 — User report
 
-Once Tester returns results, summarise in plain English:
+Once Tester returns results, summarise in plain English. You MUST output EXACTLY the following template, with no conversational filler or preface text:
 
-```
+```markdown
 TASK COMPLETE
--------------
-What was built: [plain English, one sentence]
-Branch: feature/[name]
-Commit: [hash — message]
-Passed: [list criteria that passed]
-Failed: [list criteria that failed, with brief description]
-Observations flagged (not in scope): [list / none]
-Recommended next step: [one clear action]
+What was built: [One sentence summary]
+Branch: [Branch name]
+Commit: [Commit hash]
+Passed:
+
+[List of passed criteria]
+Failed: [List or "None"]
+Observations flagged: [List or "None"]
+Recommended next step: [Provide the specific next phase or task to be completed based on the overarching plan]
 ```
+
+Note: The `Passed:` field should render as a markdown bulleted list with one criterion per line.
 
 Never show raw diffs, test logs, or stack traces to the user. Summarise only.
 
