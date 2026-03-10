@@ -83,6 +83,9 @@ At the start of each phase, re-state which phase you are in and what it covers. 
 
 Not every phase applies to every task — skip phases that are genuinely not applicable, but state explicitly which phases you are skipping and why.
 
+### Explicit Deferrals
+If a feature request, test requirement, or refactor mentioned in the prompt is intentionally excluded from your implementation plan to control scope, you MUST explicitly list it under a "DEFERRED TASKS" heading in your plan output. Never silently omit a requirement. If it's not in the plan and not in DEFERRED, it doesn't exist.
+
 ---
 
 ## Hard rules — Never
