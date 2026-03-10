@@ -486,14 +486,13 @@ function App() {
 
   // handleSelectSourceFile moved to hook
 
-  // Auto-Save Effect
+  // Auto-save effect
   useEffect(() => {
-    if (!selectedNote) return;
+    if (!selectedNote || isSaving) return;
 
-    // Skip auto-save on initial note load
-    if (!selectedNote.content) return;
-
-    const saveTimeout = setTimeout(async () => {
+    // We no longer debounce here. NoteEditor.tsx controls the frequency of updates 
+    // to selectedNote.content, so when it changes, we want to save immediately.
+    const saveNote = async () => {
       setIsSaving(true);
       try {
         const res = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}`, {
@@ -502,13 +501,10 @@ function App() {
           body: JSON.stringify({ content: selectedNote.content })
         });
         if (res.ok) {
-          // Refresh preview list without closing the note
+          // Refresh preview list without closing the note if we are in the same category
           const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes`);
           if (catRes.ok) {
             const data = await catRes.json();
-            // In the refactored hook, we can't reliably check activeCategoryFetchRef synchronously here 
-            // without bringing it into the dependency array. But we can ensure we only update if 
-            // selectedCategory matches the saved note's category.
             if (selectedCategory === selectedNote.category) {
               setCategoryNotes(data);
             }
@@ -521,9 +517,9 @@ function App() {
       } finally {
         setTimeout(() => setIsSaving(false), 500); // Small delay to make it visible
       }
-    }, 1500); // 1.5s debounce
+    };
 
-    return () => clearTimeout(saveTimeout);
+    saveNote();
   }, [selectedNote?.content, selectedNote?.filename, selectedNote?.category, API_BASE_URL]);
 
   const handleNoteOperationComplete = async (refreshCategory?: string) => {

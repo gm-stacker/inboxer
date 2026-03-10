@@ -44,6 +44,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     // which would cause it to reset on every keystroke.
     const latestChunksRef = useRef<string[]>([]);
     const latestTitleRef = useRef<string>('');
+    const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Initialize local state when note changes
     useEffect(() => {
@@ -71,14 +72,19 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
     // Debounced auto-sync (Safety net if they don't blur)
     useEffect(() => {
-        const timeout = setTimeout(() => {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+
+        syncTimeoutRef.current = setTimeout(() => {
             syncToParent();
         }, 2000); // 2 seconds after last keystroke
-        return () => clearTimeout(timeout);
+        return () => {
+            if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        };
     }, [localTitle, localChunks, syncToParent]);
 
     // Handle manual blur to sync immediately
     const handleBlur = () => {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         syncToParent();
     };
 
