@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactEl
 import type { FormEvent } from 'react';
 import './App.css'
 import TimelineTableToggle from './components/TimelineTableToggle';
-import type { ValidationDetails, SelectedNote, SearchResult, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
-import { parseNoteContent, joinNoteContent, getDisplayTitle } from './utils/noteUtils';
+import type { ValidationDetails, SelectedNote, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
+import { Sidebar } from './components/layout/Sidebar';
+import { parseNoteContent, joinNoteContent } from './utils/noteUtils';
 import { useTaxonomy } from './hooks/useTaxonomy';
 
 // --- HELPERS ---
@@ -147,6 +148,7 @@ function App() {
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null)
   const [moveToCategory, setMoveToCategory] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
   const [isUploadingToNote, setIsUploadingToNote] = useState(false)
 
   // File input refs
@@ -258,9 +260,18 @@ function App() {
   const [vaultPath, setVaultPath] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
+  const [isClearConfirming, setIsClearConfirming] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
 
   const theme = 'dark' as const;
+
+  const showToast = (message: string) => {
+    const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+    setToastFlags(prev => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToastFlags(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
 
   // Fetch Taxonomy, Config, and Briefing on Load
   useEffect(() => {
@@ -332,11 +343,11 @@ function App() {
         body: JSON.stringify({ vaultPath })
       });
       if (res.ok) {
-        alert('Vault path saved. The backend is tracking this directory.');
+        showToast('Vault path saved. The backend is tracking this directory.');
         setIsSettingsOpen(false);
         fetchTaxonomy();
       } else {
-        alert('Failed to save config.');
+        showToast('Failed to save config.');
       }
     } catch (err) {
       console.error(err);
@@ -351,20 +362,21 @@ function App() {
         method: 'DELETE'
       });
       if (res.ok) {
-        alert('Vault cleared successfully.');
+        showToast('Vault cleared successfully.');
         setIsClearing(false);
         setClearConfirmText('');
+        setIsClearConfirming(false);
         setIsSettingsOpen(false);
         setSelectedNote(null);
         setSelectedCategory(null);
         fetchTaxonomy();
       } else {
         const err = await res.text();
-        alert('Failed to clear vault: ' + err);
+        showToast('Failed to clear vault: ' + err);
       }
     } catch (err) {
       console.error(err);
-      alert('Network error clearing vault.');
+      showToast('Network error clearing vault.');
     }
   }
 
@@ -457,7 +469,7 @@ function App() {
         }
         await fetchTaxonomy()
       } else {
-        alert('Failed to rename')
+        showToast('Failed to rename')
       }
     } catch (err) {
       console.error(err)
@@ -523,7 +535,6 @@ function App() {
 
   const handleDeleteNote = async () => {
     if (!selectedNote) return
-    if (!confirm(`Are you sure you want to delete ${selectedNote.filename} ? `)) return
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes/${encodeURIComponent(selectedNote.filename)}`, {
@@ -576,8 +587,8 @@ function App() {
 
   const handleMarkAsDone = async () => {
     if (!selectedNote) return;
-    if (!confirm('Mark this note as done? It will be moved to the Completed section.')) return;
     try {
+      showToast('Marking note as done...');
       const res = await fetch(
         `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
         { method: 'PUT' }
@@ -589,7 +600,7 @@ function App() {
         setIsCompletedExpanded(true);
         await fetchCompletedNotes();
       } else {
-        alert('Failed to mark note as done.');
+        showToast('Failed to mark note as done.');
       }
     } catch (err) {
       console.error(err);
@@ -598,8 +609,8 @@ function App() {
 
   const handleUnmarkAsDone = async () => {
     if (!selectedNote) return;
-    if (!confirm('Unmark this note as done? It will be moved back to its category.')) return;
     try {
+      showToast('Unmarking note as done...');
       const res = await fetch(
         `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
         { method: 'DELETE' }
@@ -610,7 +621,7 @@ function App() {
         if (selectedCategory) await handleSelectCategory(selectedCategory);
         await fetchCompletedNotes();
       } else {
-        alert('Failed to unmark note as done.');
+        showToast('Failed to unmark note as done.');
       }
     } catch (err) {
       console.error(err);
@@ -630,7 +641,7 @@ function App() {
         await handleSelectCategory(selectedNote.category)
         await fetchTaxonomy()
       } else {
-        alert('Failed to move note.')
+        showToast('Failed to move note.')
       }
     } catch (err) {
       console.error(err)
@@ -823,7 +834,7 @@ function App() {
 
     } catch (err) {
       console.error('Drop error', err)
-      alert('Failed to move note.')
+      showToast('Failed to move note.')
     }
   }
 
@@ -1052,209 +1063,40 @@ function App() {
     setIsQuickAddOpen(false);
   }
 
-  const getTaxonomyIcon = (name: string) => {
-    const n = name.toLowerCase();
-    if (n.includes('inbox')) return '📂';
-    if (n.includes('health') || n.includes('medical')) return '🩺';
-    if (n.includes('family') || n.includes('people')) return '👥';
-    if (n.includes('personal')) return '🗂️';
-    if (n.includes('travel')) return '✈️';
-    if (n.includes('finance') || n.includes('money')) return '💰';
-    return '📁';
-  }
+
 
   return (
     <div className="app-container">
 
       {/* --- SIDEBAR --- */}
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-logo">
-            <span className="material-icons">inbox</span>
-          </div>
-          <span className="brand-text">Inboxer Vault</span>
-        </div>
-
-        <div className="search-container">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        <nav className="sidebar-nav">
-          <div className="taxonomy-list">
-            {searchQuery.trim() ? (
-              /* ── Search Results Mode ─────────────────────────────── */
-              isSearching ? (
-                <div className="search-empty-state">Searching…</div>
-              ) : searchResults && searchResults.length === 0 ? (
-                <div className="search-empty-state">No results for "{searchQuery}"</div>
-              ) : searchResults ? (() => {
-                // Group results by category
-                const grouped: Record<string, SearchResult[]> = {};
-                searchResults.forEach(r => {
-                  if (!grouped[r.category]) grouped[r.category] = [];
-                  grouped[r.category].push(r);
-                });
-                return Object.entries(grouped).map(([cat, notes]) => (
-                  <div key={cat} className="taxonomy-item-wrapper">
-                    <div className="taxonomy-item search-result-category">
-                      <div className="taxonomy-item-label">
-                        <span className="tax-icon">{getTaxonomyIcon(cat)}</span>
-                        <span className="tax-name">{cat.replace(/_/g, ' ')}</span>
-                      </div>
-                      <span className="badge">{notes.length}</span>
-                    </div>
-                    <div className="notes-list">
-                      {notes.map(n => (
-                        <div
-                          key={n.filename}
-                          className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedCategory(cat)
-                            setSelectedCategory(cat)
-                            handleSelectNote(n.filename)
-                          }}
-                        >
-                          <div className="note-dot"></div>
-                          <div className="note-content">
-                            <div className="note-title">{n.title || n.filename.replace('.md', '')}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ));
-              })() : null
-            ) : (
-              /* ── Normal Taxonomy Mode ────────────────────────────── */
-              taxonomies
-                .map((cat) => (
-                  <div key={cat.name} className="taxonomy-item-wrapper">
-                    <div
-                      className={`taxonomy-item ${selectedCategory === cat.name ? 'active' : ''}`}
-                      onClick={() => handleSelectCategory(cat.name)}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, cat.name)}
-                    >
-                      {isRenaming === cat.name ? (
-                        <input
-                          className="rename-input"
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={() => handleRename(cat.name)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRename(cat.name)
-                            if (e.key === 'Escape') setIsRenaming(null)
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <div
-                          className="taxonomy-item-label"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation()
-                            setIsRenaming(cat.name)
-                            setRenameValue(cat.name)
-                          }}
-                        >
-                          <span className="tax-icon">{getTaxonomyIcon(cat.name)}</span>
-                          <span className="tax-name">{cat.name.replace(/_/g, ' ')}</span>
-                        </div>
-                      )}
-                      <span className="badge">{cat.noteCount}</span>
-                    </div>
-
-                    {selectedCategory === cat.name && (
-                      <div className="notes-list">
-                        {categoryNotes
-                          .map(n => (
-                            <div
-                              key={n.filename}
-                              className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, n.filename, cat.name)}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSelectNote(n.filename)
-                              }}
-                            >
-                              <div className="note-dot"></div>
-                              <div className="note-content">
-                                <div className="note-title">
-                                  {getDisplayTitle(n.preview, n.filename)}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                ))
-            )}
-          </div>
-
-
-          {/* Completed Section */}
-          <div className="completed-section">
-            <div
-              className="completed-header taxonomy-item"
-              onClick={() => {
-                if (!isCompletedExpanded) fetchCompletedNotes();
-                setIsCompletedExpanded(p => !p);
-              }}
-            >
-              <div className="taxonomy-item-label">
-                <span className="tax-icon">✓</span>
-                <span className="tax-name">Completed</span>
-              </div>
-              <span className="badge">{completedNotes.length}</span>
-            </div>
-            {isCompletedExpanded && (
-              <div className="notes-list">
-                {completedNotes.length === 0 ? (
-                  <div className="note-item" style={{ opacity: 0.5, pointerEvents: 'none' }}>
-                    <div className="note-content"><div className="note-title">No completed notes</div></div>
-                  </div>
-                ) : (
-                  completedNotes.map(n => (
-                    <div
-                      key={n.filename}
-                      className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedCategory(n.category);
-                        setSelectedCategory(n.category);
-                        fetch(`${API_BASE_URL}/api/taxonomy/${n.category}/notes/${n.filename}`)
-                          .then(r => r.json())
-                          .then(d => setSelectedNote({ filename: d.filename, content: d.content, category: d.category }))
-                          .catch(console.error);
-                      }}
-                    >
-                      <div className="note-dot" style={{ background: 'var(--c-ai-accent)' }}></div>
-                      <div className="note-content">
-                        <div className="note-title">{n.filename.replace('.md', '').replace(/_/g, ' ')}</div>
-                        {n.doneAt && (
-                          <div className="note-date" style={{ fontSize: '0.7rem', opacity: 0.5 }}>
-                            {new Date(n.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </nav>
-      </aside>
+      <Sidebar
+        API_BASE_URL={API_BASE_URL}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        isSearching={isSearching}
+        searchResults={searchResults}
+        taxonomies={taxonomies}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        handleSelectCategory={handleSelectCategory}
+        isRenaming={isRenaming}
+        setIsRenaming={setIsRenaming}
+        renameValue={renameValue}
+        setRenameValue={setRenameValue}
+        handleRename={handleRename}
+        categoryNotes={categoryNotes}
+        selectedNote={selectedNote}
+        setSelectedNote={setSelectedNote}
+        handleSelectNote={handleSelectNote}
+        handleDragOver={handleDragOver}
+        handleDragLeave={handleDragLeave}
+        handleDrop={handleDrop}
+        handleDragStart={handleDragStart}
+        isCompletedExpanded={isCompletedExpanded}
+        setIsCompletedExpanded={setIsCompletedExpanded}
+        completedNotes={completedNotes}
+        fetchCompletedNotes={fetchCompletedNotes}
+      />
 
       {/* --- MAIN CONTENT --- */}
       <main className="main-content">
@@ -1512,9 +1354,17 @@ function App() {
                     ) : (
                       <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
                     )}
-                    <button className="btn btn-warning icon-btn" onClick={handleDeleteNote} title="Delete note">
-                      <span className="material-icons">delete</span>
-                    </button>
+                    {noteToDelete === selectedNote.filename ? (
+                      <div className="delete-confirm-inline" style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'var(--bg-raised)', padding: '4px 8px', borderRadius: '4px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Delete?</span>
+                        <button className="icon-btn" onClick={() => { handleDeleteNote(); setNoteToDelete(null); }} style={{ color: '#ef4444' }}>Yes</button>
+                        <button className="icon-btn" onClick={() => setNoteToDelete(null)}>No</button>
+                      </div>
+                    ) : (
+                      <button className="btn btn-warning icon-btn" onClick={() => setNoteToDelete(selectedNote.filename)} title="Delete note">
+                        <span className="material-icons" style={{ fontSize: '18px' }}>delete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1951,9 +1801,20 @@ function App() {
                       value={clearConfirmText}
                       onChange={(e) => setClearConfirmText(e.target.value)}
                     />
-                    <button className="btn btn-warning" onClick={handleClearVault} disabled={isClearing}>
-                      {isClearing ? 'Clearing...' : 'Clear Vault'}
+                    <button className="btn btn-warning" onClick={() => {
+                      if (!isClearConfirming) {
+                        setIsClearConfirming(true);
+                      } else {
+                        handleClearVault();
+                      }
+                    }} disabled={isClearing}>
+                      {isClearing ? 'Clearing...' : (isClearConfirming ? 'Confirm Clear?' : 'Clear Vault')}
                     </button>
+                    {isClearConfirming && (
+                      <button className="btn btn-outline" style={{ marginLeft: '8px' }} onClick={() => setIsClearConfirming(false)}>
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </fieldset>
               </div>
