@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, type Dispatch, type SetStateAction } from 'react';
+import { getTaxonomies, searchTaxonomy, getCategoryNotes, getNoteDetail } from '../services/api';
 import type { TaxonomyCategory, NotePreview, SearchResult, SelectedNote, ToastFlag } from '../types/index';
 
 export interface UseTaxonomyConfig {
-    API_BASE_URL: string;
     setSelectedNote: Dispatch<SetStateAction<SelectedNote | null>>;
     setToastFlags: Dispatch<SetStateAction<ToastFlag[]>>;
     setDynamicEchoes: Dispatch<SetStateAction<string[] | null>>;
@@ -24,7 +24,6 @@ export interface UseTaxonomyReturn {
 }
 
 export function useTaxonomy({
-    API_BASE_URL,
     setSelectedNote,
     setToastFlags,
     setDynamicEchoes
@@ -40,11 +39,9 @@ export function useTaxonomy({
 
     const fetchTaxonomy = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy`);
-            if (res.ok) {
-                const data = await res.json();
-                setTaxonomies(data);
-            }
+            const res = await getTaxonomies();
+            const data = await res.json();
+            setTaxonomies(data);
         } catch (err) {
             console.error('Failed to fetch taxonomy', err);
         }
@@ -62,16 +59,10 @@ export function useTaxonomy({
 
         const timer = setTimeout(async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/taxonomy/search?q=${encodeURIComponent(searchQuery.trim())}`, {
-                    signal: abortController.signal
-                });
-                if (res.ok) {
-                    const data: SearchResult[] = await res.json();
-                    setSearchResults(data);
-                    console.log(`[hook] Searching for: ${searchQuery.trim()}`);
-                } else {
-                    setSearchResults([]);
-                }
+                const res = await searchTaxonomy(searchQuery.trim(), abortController.signal);
+                const data: SearchResult[] = await res.json();
+                setSearchResults(data);
+                console.log(`[hook] Searching for: ${searchQuery.trim()}`);
             } catch (err: any) {
                 if (err.name === 'AbortError') {
                     console.log(`[hook] Search aborted for: ${searchQuery.trim()}`);
@@ -90,7 +81,7 @@ export function useTaxonomy({
             clearTimeout(timer);
             abortController.abort();
         };
-    }, [searchQuery, API_BASE_URL]);
+    }, [searchQuery]);
 
     const handleSelectCategory = async (categoryName: string) => {
         if (selectedCategory === categoryName) {
@@ -103,12 +94,10 @@ export function useTaxonomy({
         setCategoryNotes([]);
         activeCategoryFetchRef.current = categoryName;
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy/${categoryName}/notes`);
-            if (res.ok) {
-                const data = await res.json();
-                if (activeCategoryFetchRef.current === categoryName) {
-                    setCategoryNotes(data);
-                }
+            const res = await getCategoryNotes(categoryName);
+            const data = await res.json();
+            if (activeCategoryFetchRef.current === categoryName) {
+                setCategoryNotes(data);
             }
         } catch (err) {
             console.error('Failed to fetch notes', err);
@@ -127,39 +116,33 @@ export function useTaxonomy({
         activeCategoryFetchRef.current = categoryName;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy/${categoryName}/notes/${filename}`);
-            if (res.ok) {
-                const data = await res.json();
-                setSelectedNote({ filename: data.filename, content: data.content, category: data.category });
+            const res = await getNoteDetail(categoryName, filename);
+            const data = await res.json();
+            setSelectedNote({ filename: data.filename, content: data.content, category: data.category });
 
-                // Desync Fix: Ensure internal ref matches the returned actual category
-                if (data.category !== categoryName) {
-                    setSelectedCategory(data.category);
-                    activeCategoryFetchRef.current = data.category;
-                }
-                setDynamicEchoes(null);
-            } else {
-                setSelectedNote(null);
-                const obsidianUri = `obsidian://search?query=${encodeURIComponent(filename.replace('.md', ''))}`;
-                setToastFlags(prev => [...prev, {
-                    id: `note-404-${Date.now()}`,
-                    message: `📄 Note not found in app: ${sourceFile} — [Open in Obsidian](${obsidianUri})`
-                }]);
+            // Desync Fix: Ensure internal ref matches the returned actual category
+            if (data.category !== categoryName) {
+                setSelectedCategory(data.category);
+                activeCategoryFetchRef.current = data.category;
             }
+            setDynamicEchoes(null);
         } catch (err) {
             console.error('Failed to fetch source file note', err);
             setSelectedNote(null);
+            const obsidianUri = `obsidian://search?query=${encodeURIComponent(filename.replace('.md', ''))}`;
+            setToastFlags(prev => [...prev, {
+                id: `note-404-${Date.now()}`,
+                message: `📄 Note not found in app: ${sourceFile} — [Open in Obsidian](${obsidianUri})`
+            }]);
         }
 
         try {
             const currentFetchCat = activeCategoryFetchRef.current;
             if (!currentFetchCat) return;
-            const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${currentFetchCat}/notes`);
-            if (catRes.ok) {
-                const catData = await catRes.json();
-                if (activeCategoryFetchRef.current === currentFetchCat) {
-                    setCategoryNotes(catData);
-                }
+            const catRes = await getCategoryNotes(currentFetchCat);
+            const catData = await catRes.json();
+            if (activeCategoryFetchRef.current === currentFetchCat) {
+                setCategoryNotes(catData);
             }
         } catch (err) {
             console.error('Failed to fetch category notes', err);

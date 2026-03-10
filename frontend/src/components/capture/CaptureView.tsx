@@ -1,9 +1,9 @@
-import React, { useState, useRef, useLayoutEffect, type FormEvent } from 'react';
+import React, { useState, useRef, useLayoutEffect, type FormEvent, type ReactElement } from 'react';
+import { uploadMediaCapture, captureRawText, saveTripContext, submitQuery } from '../../services/api';
 import type { CaptureQueueItem, ChatMessage, TripBriefing, ValidationDetails } from '../../types';
 import { QuerySummary } from '../common/QuerySummary';
 
 interface CaptureViewProps {
-    API_BASE_URL: string;
     selectedCategory: string | null;
     handleSelectCategory: (category: string) => Promise<void>;
     handleSelectSourceFile: (sourceFile: string) => void;
@@ -11,7 +11,6 @@ interface CaptureViewProps {
 }
 
 export const CaptureView: React.FC<CaptureViewProps> = ({
-    API_BASE_URL,
     selectedCategory,
     handleSelectCategory,
     handleSelectSourceFile,
@@ -91,36 +90,25 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
                     const formData = new FormData();
                     formData.append('file', item.file);
                     if (item.text) formData.append('description', item.text);
-                    // Assuming App.tsx passed categories, but here we can just pass selectedCategory or similar
                     if (item.category) formData.append('category', item.category);
 
-                    response = await fetch(`${API_BASE_URL}/api/capture/upload`, {
-                        method: 'POST',
-                        body: formData,
-                    });
+                    response = await uploadMediaCapture(formData);
                 } else {
                     const payload = item.category ? `${item.category}\n${item.text}` : item.text;
-                    response = await fetch(`${API_BASE_URL}/api/capture`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ raw_text: payload }),
-                    });
+                    response = await captureRawText(payload);
                 }
 
-                if (response.ok) {
-                    const result = await response.json();
-                    setCaptureQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'done', result: result.details } : i));
-                    setLastCaptureDetails(result.details);
-                    await fetchTaxonomy();
-                    if (selectedCategory) {
-                        await handleSelectCategory(selectedCategory);
-                    }
-                } else {
-                    const err = await response.text();
-                    setCaptureQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: err } : i));
+                const result = await response.json();
+                setCaptureQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'done', result: result.details } : i));
+                setLastCaptureDetails(result.details);
+                await fetchTaxonomy();
+                if (selectedCategory) {
+                    await handleSelectCategory(selectedCategory);
                 }
-            } catch {
-                setCaptureQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Network error.' } : i));
+            } catch (err: any) {
+                // Determine if it was an error during HTTP or network error
+                const errMsg = err.message || 'Network error.';
+                setCaptureQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: errMsg } : i));
             }
         };
 
@@ -130,7 +118,7 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
         if (pendingItem && !isProcessing) {
             processQueueItem(pendingItem);
         }
-    }, [captureQueue, selectedCategory, API_BASE_URL, fetchTaxonomy, handleSelectCategory]);
+    }, [captureQueue, selectedCategory, fetchTaxonomy, handleSelectCategory]);
 
     const removeQueueItem = (id: string) => {
         setCaptureQueue(q => q.filter(i => i.id !== id));
@@ -148,29 +136,21 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
         setChatHistory(newHistory);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/tripcontext`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ destination: tripDestination, date: tripDate }),
-            });
+            const response = await saveTripContext(tripDestination, tripDate);
+            const result: TripBriefing = await response.json();
 
-            if (response.ok) {
-                const result: TripBriefing = await response.json();
+            let summaryHtml = '';
+            if (result.tasks && result.tasks.length > 0) summaryHtml += `<h4>✅ Tasks & Reminders</h4 > <ul>${result.tasks.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+            if (result.pastExperiences && result.pastExperiences.length > 0) summaryHtml += `<h4>📍 Past Experiences</h4 > <ul>${result.pastExperiences.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+            if (result.people && result.people.length > 0) summaryHtml += `<h4>👤 People & Connections</h4 > <ul>${result.people.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+            if (result.prepare && result.prepare.length > 0) summaryHtml += `<h4>🎒 Bring or Prepare</h4 > <ul>${result.prepare.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
 
-                let summaryHtml = '';
-                if (result.tasks && result.tasks.length > 0) summaryHtml += `<h4>✅ Tasks & Reminders</h4 > <ul>${result.tasks.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
-                if (result.pastExperiences && result.pastExperiences.length > 0) summaryHtml += `<h4>📍 Past Experiences</h4 > <ul>${result.pastExperiences.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
-                if (result.people && result.people.length > 0) summaryHtml += `<h4>👤 People & Connections</h4 > <ul>${result.people.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
-                if (result.prepare && result.prepare.length > 0) summaryHtml += `<h4>🎒 Bring or Prepare</h4 > <ul>${result.prepare.map((t: string) => '<li>' + t + '</li>').join('')}</ul>`;
+            if (!summaryHtml) summaryHtml = "<p>No notable insights found for this destination.</p>";
 
-                if (!summaryHtml) summaryHtml = "<p>No notable insights found for this destination.</p>";
-
-                setChatHistory((prev: ChatMessage[]) => [...prev, { role: 'assistant', content: '', summary: summaryHtml }]);
-            } else {
-                setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: 'Error generating trip briefing.' }]);
-            }
-        } catch {
-            setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: 'Network error.' }]);
+            setChatHistory((prev: ChatMessage[]) => [...prev, { role: 'assistant', content: '', summary: summaryHtml }]);
+        } catch (err: any) {
+            const errMsg = err.message || 'Network error.';
+            setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: `Error generating trip briefing. ${errMsg}` }]);
         } finally {
             setIsGeneratingTripContext(false);
             setTripDestination('');
@@ -199,20 +179,12 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
                     content: msg.role === 'user' ? msg.content : msg.summary
                 }));
 
-                const response = await fetch(`${API_BASE_URL}/api/query`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: payload, mode: isTemporal ? 'temporal' : 'standard' }),
-                })
-
-                if (response.ok) {
-                    const result = await response.json()
-                    setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: result.summary, trend: result.trend }]);
-                } else {
-                    setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: 'Error: Could not reach knowledge vault.' }]);
-                }
-            } catch {
-                setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: 'Network error communicating with the vault API.' }]);
+                const response = await submitQuery(payload, isTemporal ? 'temporal' : 'standard');
+                const result = await response.json();
+                setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: result.summary, trend: result.trend }]);
+            } catch (err: any) {
+                const errMsg = err.message || 'Network error.';
+                setChatHistory(prev => [...prev, { role: 'assistant', content: '', summary: `Error communicating with the vault API. ${errMsg}` }]);
             } finally {
                 setIsQuerying(false)
             }
