@@ -751,12 +751,19 @@ function App() {
     if (!confirm(`Are you sure you want to delete ${selectedNote.filename} ? `)) return
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}`, {
+      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes/${encodeURIComponent(selectedNote.filename)}`, {
         method: 'DELETE'
       })
       if (res.ok) {
         setSelectedNote(null)
-        await handleSelectCategory(selectedNote.category)
+        // Refresh the current category without toggling it closed
+        const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes`)
+        if (catRes.ok) {
+          const data = await catRes.json()
+          if (activeCategoryFetchRef.current === selectedNote.category) {
+            setCategoryNotes(data)
+          }
+        }
         await fetchTaxonomy()
       }
     } catch (err) {
