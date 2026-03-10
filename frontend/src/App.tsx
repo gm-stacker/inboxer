@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactElement } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getBriefing, getVaultConfig, saveVaultConfig, clearVaultConfig, renameCategory, getNoteDetail, updateNoteContent, getTaxonomies, getCategoryNotes, synthesizeEchoes, moveNote, saveConversation, submitChat, captureRawText } from './services/api';
 import './App.css'
 import type { SelectedNote, ChatTurn, ToastFlag, MorningBriefing } from './types/index';

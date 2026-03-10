@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, type FormEvent, type ReactElement } from 'react';
+import React, { useState, useRef, useLayoutEffect, type FormEvent } from 'react';
 import { uploadMediaCapture, captureRawText, saveTripContext, submitQuery } from '../../services/api';
 import type { CaptureQueueItem, ChatMessage, TripBriefing, ValidationDetails } from '../../types';
 import { QuerySummary } from '../common/QuerySummary';

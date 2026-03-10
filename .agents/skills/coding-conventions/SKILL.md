@@ -101,6 +101,7 @@ These are absolute. There are no exceptions.
 - **Never** infer missing information — ask instead
 - **Never** proceed past a checkpoint without outputting the required block
 - **Never** introduce new npm packages or NuGet dependencies without explicit Team Lead approval and user sign-off
+- **Enforce scope discipline for locks (Lock Scoping):** Always wrap async operations requiring locks (e.g., `_writeLock.WaitAsync()`) in `try...finally` blocks. The `finally` block exclusively calls `.Release()`. Do not perform non-critical operations inside the lock.
 
 ---
 
