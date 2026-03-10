@@ -24,6 +24,7 @@ namespace Backend.Services
         private readonly IVaultCacheService _cacheService;
         private FileSystemWatcher? _watcher;
         private string _vaultPath;
+        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
         
         // Debounce dictionary: file path -> debounce timer CTS
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _debounceTimers = new();
@@ -240,21 +241,37 @@ namespace Backend.Services
                 var finalFileContent = $"---\n{newYamlRaw.TrimEnd()}\n---\n{body}";
 
                 // Write back atomically
-                retries = 3;
-                while (retries > 0)
+                await _writeLock.WaitAsync();
+                try
                 {
-                    try
+                    var tempPath = filePath + ".tmp";
+                    retries = 3;
+                    while (retries > 0)
                     {
-                        File.WriteAllText(filePath, finalFileContent);
-                        _logger.LogInformation($"Successfully updated frontmatter for {filePath}");
-                        break;
+                        try
+                        {
+                            await File.WriteAllTextAsync(tempPath, finalFileContent);
+                            File.Replace(tempPath, filePath, filePath + ".bak");
+                            _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", "Surgical Frontmatter Update", Path.GetFileName(filePath), DateTime.UtcNow);
+                            break;
+                        }
+                        catch (IOException)
+                        {
+                            retries--;
+                            if (retries == 0) throw;
+                            await Task.Delay(500);
+                        }
                     }
-                    catch (IOException)
-                    {
-                        retries--;
-                        if (retries == 0) throw;
-                        await Task.Delay(500);
-                    }
+                }
+                catch
+                {
+                    var tempPath = filePath + ".tmp";
+                    if (File.Exists(tempPath)) File.Delete(tempPath);
+                    throw;
+                }
+                finally
+                {
+                    _writeLock.Release();
                 }
 
             }
