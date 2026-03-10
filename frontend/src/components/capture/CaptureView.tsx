@@ -1,5 +1,6 @@
-import React, { useState, useRef, useLayoutEffect, type FormEvent, type ReactElement } from 'react';
+import React, { useState, useRef, useLayoutEffect, type FormEvent } from 'react';
 import type { CaptureQueueItem, ChatMessage, TripBriefing, ValidationDetails } from '../../types';
+import { QuerySummary } from '../common/QuerySummary';
 
 interface CaptureViewProps {
     API_BASE_URL: string;
@@ -7,7 +8,6 @@ interface CaptureViewProps {
     handleSelectCategory: (category: string) => Promise<void>;
     handleSelectSourceFile: (sourceFile: string) => void;
     fetchTaxonomy: () => Promise<void>;
-    parseQuerySummary: (text: string, onSourceClick: (f: string) => void) => ReactElement;
 }
 
 export const CaptureView: React.FC<CaptureViewProps> = ({
@@ -15,8 +15,7 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
     selectedCategory,
     handleSelectCategory,
     handleSelectSourceFile,
-    fetchTaxonomy,
-    parseQuerySummary
+    fetchTaxonomy
 }) => {
     const [inputText, setInputText] = useState('')
     const [statusMessage, setStatusMessage] = useState('')
@@ -422,7 +421,7 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
                                     </div>
                                 )}
                                 {msg.role === 'assistant' && (msg.summary || msg.content)
-                                    ? parseQuerySummary(msg.summary || msg.content, handleSelectSourceFile)
+                                    ? <QuerySummary text={msg.summary || msg.content} onSourceClick={handleSelectSourceFile} />
                                     : (msg.summary || msg.content)}
                                 {msg.timeline && msg.timeline.length > 0 && (
                                     <div className="query-timeline" style={{ marginTop: '16px' }}>
