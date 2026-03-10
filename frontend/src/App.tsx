@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, type ReactElement } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, type ReactElement } from 'react';
 import type { FormEvent } from 'react';
 import './App.css'
 import TimelineTableToggle from './components/TimelineTableToggle';
 import type { ValidationDetails, SelectedNote, CaptureQueueItem, ChatMessage, TripBriefing, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
 import { Sidebar } from './components/layout/Sidebar';
-import { parseNoteContent, joinNoteContent } from './utils/noteUtils';
+import { NoteEditor } from './components/editor/NoteEditor';
 import { useTaxonomy } from './hooks/useTaxonomy';
 
 // --- HELPERS ---
@@ -53,7 +53,7 @@ const parseQuerySummary = (
               ))}
             </tbody>
           </table>
-        </div>
+        </div >
       );
     } else if (part.startsWith('[TIMELINE]') && part.endsWith('[/TIMELINE]')) {
       const inner = part.slice(10, -11).trim();
@@ -146,14 +146,10 @@ function App() {
 
   // Editor State
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null)
-  const [moveToCategory, setMoveToCategory] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
-  const [isUploadingToNote, setIsUploadingToNote] = useState(false)
 
   // File input refs
   const captureFileInputRef = useRef<HTMLInputElement>(null)
-  const noteFileInputRef = useRef<HTMLInputElement>(null)
 
   // Form State
   const [selectedDestCategory, setSelectedDestCategory] = useState<string>('')
@@ -164,12 +160,11 @@ function App() {
   const [captureQueue, setCaptureQueue] = useState<CaptureQueueItem[]>([])
 
   // Properties Panel State
-  const [isPropertiesExpanded, setIsPropertiesExpanded] = useState(false)
+  // extracted to NoteEditor
 
   // Completed notes State
   const [completedNotes, setCompletedNotes] = useState<Array<{ filename: string; category: string; doneAt: string }>>([]);
   const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
-  const [isReanalyzing, setIsReanalyzing] = useState(false);
 
   // Quick-Add State
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
@@ -252,7 +247,6 @@ function App() {
     API_BASE_URL,
     setSelectedNote,
     setToastFlags,
-    setIsPropertiesExpanded,
     setDynamicEchoes
   });
 
@@ -484,7 +478,6 @@ function App() {
         const data = await res.json()
         setSelectedNote({ filename: data.filename, content: data.content, category: data.category })
         setDynamicEchoes(null) // reset on new note
-        setIsPropertiesExpanded(false) // collapse properties on new note
       }
     } catch (err) {
       console.error('Failed to fetch note details', err)
@@ -533,29 +526,14 @@ function App() {
     return () => clearTimeout(saveTimeout);
   }, [selectedNote?.content, selectedNote?.filename, selectedNote?.category, API_BASE_URL]);
 
-  const handleDeleteNote = async () => {
-    if (!selectedNote) return
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes/${encodeURIComponent(selectedNote.filename)}`, {
-        method: 'DELETE'
-      })
-      if (res.ok) {
-        setSelectedNote(null)
-        // Refresh the current category without toggling it closed
-        const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(selectedNote.category)}/notes`)
-        if (catRes.ok) {
-          const data = await catRes.json()
-          if (selectedCategory === selectedNote.category) {
-            setCategoryNotes(data)
-          }
-        }
-        await fetchTaxonomy()
-      }
-    } catch (err) {
-      console.error(err)
+  const handleNoteOperationComplete = async (refreshCategory?: string) => {
+    setSelectedNote(null);
+    await fetchTaxonomy();
+    if (refreshCategory && refreshCategory === selectedCategory) {
+      await handleSelectCategory(refreshCategory);
     }
-  }
+    await fetchCompletedNotes();
+  };
 
   const fetchCompletedNotes = async () => {
     try {
@@ -584,126 +562,6 @@ function App() {
       console.error('Failed to fetch completed notes', err);
     }
   }
-
-  const handleMarkAsDone = async () => {
-    if (!selectedNote) return;
-    try {
-      showToast('Marking note as done...');
-      const res = await fetch(
-        `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
-        { method: 'PUT' }
-      );
-      if (res.ok) {
-        setSelectedNote(null);
-        await fetchTaxonomy();
-        if (selectedCategory) await handleSelectCategory(selectedCategory);
-        setIsCompletedExpanded(true);
-        await fetchCompletedNotes();
-      } else {
-        showToast('Failed to mark note as done.');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  const handleUnmarkAsDone = async () => {
-    if (!selectedNote) return;
-    try {
-      showToast('Unmarking note as done...');
-      const res = await fetch(
-        `${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/done`,
-        { method: 'DELETE' }
-      );
-      if (res.ok) {
-        setSelectedNote(null);
-        await fetchTaxonomy();
-        if (selectedCategory) await handleSelectCategory(selectedCategory);
-        await fetchCompletedNotes();
-      } else {
-        showToast('Failed to unmark note as done.');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  const handleMoveNote = async () => {
-    if (!selectedNote || !moveToCategory) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}/move`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_category: moveToCategory })
-      })
-      if (res.ok) {
-        setSelectedNote(null)
-        await handleSelectCategory(selectedNote.category)
-        await fetchTaxonomy()
-      } else {
-        showToast('Failed to move note.')
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  // Upload a file into the currently open note's category, then insert ![[filename]] at cursor
-  const handleNoteFileUpload = useCallback(async (file: File, cursorChunkIndex: number, cursorPos: number) => {
-    if (!selectedNote) return;
-    setIsUploadingToNote(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('category', selectedNote.category);
-      const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
-        const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
-        // Insert into note content at cursor chunk
-        const { props, body } = parseNoteContent(selectedNote.content);
-        const chunks = body.split(/(!\[\[.*?\]\])/g);
-        const chunk = chunks[cursorChunkIndex] || '';
-        const newChunk = chunk.slice(0, cursorPos) + `\n${embed}\n` + chunk.slice(cursorPos);
-        chunks[cursorChunkIndex] = newChunk;
-        setSelectedNote({ ...selectedNote, content: joinNoteContent(props, chunks.join('')) });
-      } else {
-        console.error('Upload failed', await res.text());
-      }
-    } catch (err) {
-      console.error('Upload error', err);
-    } finally {
-      setIsUploadingToNote(false);
-    }
-  }, [selectedNote, API_BASE_URL]);
-
-  // Direct file upload to note using multipart — saves into note's category folder only
-  const handleNoteFileSelect = useCallback(async (file: File) => {
-    if (!selectedNote) return;
-    setIsUploadingToNote(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('category', selectedNote.category);
-      const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
-        const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
-        const { props, body } = parseNoteContent(selectedNote.content);
-        setSelectedNote({ ...selectedNote, content: joinNoteContent(props, body + `\n\n${embed}\n`) });
-      } else {
-        console.error('Upload failed', await res.text());
-      }
-    } catch (err) {
-      console.error('Upload error', err);
-    } finally {
-      setIsUploadingToNote(false);
-    }
-  }, [selectedNote, API_BASE_URL]);
 
   // Paste handler for capture textarea
   const handleCapturePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -739,60 +597,7 @@ function App() {
     }
   }
 
-  const handleReanalyze = async () => {
-    if (!selectedNote || isReanalyzing) return
-    setIsReanalyzing(true)
-    setStatusMessage('Re-analyzing with AI Engine...')
 
-    const noteCategory = selectedNote.category;
-    const noteFilename = selectedNote.filename;
-    let rawText = selectedNote.content;
-    const parsed = parseNoteContent(rawText);
-    rawText = parsed.body || rawText;
-
-    try {
-      await fetch(`${API_BASE_URL}/api/taxonomy/${noteCategory}/notes/${noteFilename}`, {
-        method: 'DELETE'
-      })
-
-      const response = await fetch(`${API_BASE_URL}/api/capture`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: rawText }),
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        setStatusMessage('Analysis complete!')
-        setLastCaptureDetails(result.details)
-        await fetchTaxonomy()
-        // Re-fetch the note — it may have a new filename or same name in same/different category
-        const newFilename: string = result.details?.suggestedFilename
-          ? result.details.suggestedFilename + '.md'
-          : noteFilename;
-        const newCategory: string = result.details?.targetCategory || noteCategory;
-        try {
-          const refreshRes = await fetch(`${API_BASE_URL}/api/taxonomy/${newCategory}/notes/${newFilename}`);
-          if (refreshRes.ok) {
-            const refreshed = await refreshRes.json();
-            setSelectedNote({ filename: refreshed.filename, content: refreshed.content, category: refreshed.category });
-            setSelectedCategory(refreshed.category);
-            const catRes = await fetch(`${API_BASE_URL}/api/taxonomy/${refreshed.category}/notes`);
-            if (catRes.ok) setCategoryNotes(await catRes.json());
-          }
-        } catch { /* stay on current note if refresh fails */ }
-        setTimeout(() => setStatusMessage(''), 3000)
-      } else {
-        const err = await response.text()
-        setStatusMessage('Analysis Error: ' + err)
-      }
-    } catch (error) {
-      console.error(error)
-      setStatusMessage('Network Error')
-    } finally {
-      setIsReanalyzing(false)
-    }
-  }
 
   // --- DRAG AND DROP HANDLERS ---
   const handleDragStart = (e: React.DragEvent, filename: string, sourceCategory: string) => {
@@ -1158,253 +963,21 @@ function App() {
         <div className={`center-container ${selectedNote ? 'three-column-mode' : ''}`}>
           {selectedNote ? (
             /* --- NOTE EDITOR --- */
-            <>
-              <div className="note-editor">
-                <header className="editor-header">
-                  <div className="editor-breadcrumbs">
-                    <button
-                      className="back-btn"
-                      onClick={() => setSelectedNote(null)}
-                      title="Back to home"
-                    >
-                      <span className="material-icons" style={{ fontSize: '20px' }}>arrow_back</span>
-                    </button>
-                    <span>vault</span>
-                    <span>/</span>
-                    <span>{selectedNote.category}</span>
-                  </div>
-
-                  <div className="editor-header-actions">
-                    <button className="icon-btn" onClick={() => setIsSettingsOpen(true)} title="Vault Config">
-                      <span className="material-icons" style={{ fontSize: '18px' }}>settings</span>
-                    </button>
-                    <button className="icon-btn" title="View Grid">
-                      <span className="material-icons" style={{ fontSize: '18px' }}>grid_view</span>
-                    </button>
-                    <button className="icon-btn" onClick={() => setSelectedNote(null)} title="Home">
-                      <span className="material-icons" style={{ fontSize: '18px' }}>home</span>
-                    </button>
-                  </div>
-                </header>
-
-                <input
-                  className="editor-title-input"
-                  value={parseNoteContent(selectedNote.content).props.title || ''}
-                  onChange={(e) => {
-                    const { props, body } = parseNoteContent(selectedNote.content);
-                    const newProps = { ...props, title: e.target.value };
-                    setSelectedNote({ ...selectedNote, content: joinNoteContent(newProps, body) });
-                  }}
-                  placeholder="Note title..."
-                />
-                {/* Inline Editor */}
-
-                {/* Hidden file input for note editor */}
-                <input
-                  type="file"
-                  ref={noteFileInputRef}
-                  style={{ display: 'none' }}
-                  accept="image/*,application/pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleNoteFileSelect(file);
-                    e.target.value = '';
-                  }}
-                />
-
-                <div className="editor-toolbar">
-                  <div className="toolbar-group">
-                    <span className="material-icons toolbar-icon">undo</span>
-                    <span className="material-icons toolbar-icon">redo</span>
-                  </div>
-                  <div className="toolbar-group">
-                    <span className="material-icons toolbar-icon">format_bold</span>
-                    <span className="material-icons toolbar-icon">format_italic</span>
-                    <span className="material-icons toolbar-icon">format_underlined</span>
-                    <span className="material-icons toolbar-icon">strikethrough_s</span>
-                  </div>
-                  <div className="toolbar-group">
-                    <span className="material-icons toolbar-icon">link</span>
-                    <span className="material-icons toolbar-icon">code</span>
-                    <span className="material-icons toolbar-icon">format_list_bulleted</span>
-                    <span className="material-icons toolbar-icon">checklist_rtl</span>
-                  </div>
-                  <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
-                    <span
-                      className="material-icons toolbar-icon"
-                      title="Attach file"
-                      onClick={() => noteFileInputRef.current?.click()}
-                      style={{ cursor: 'pointer' }}
-                    >attach_file</span>
-                    {isUploadingToNote && <span className="toolbar-uploading">uploading...</span>}
-                  </div>
-                </div>
-
-                <div className="inline-editor">
-                  {(() => {
-                    const { props, body } = parseNoteContent(selectedNote.content);
-                    const chunks = body.split(/(!\[\[.*?\]\])/g);
-
-                    return chunks.map((chunk: string, i: number) => {
-                      if (chunk.startsWith('![[') && chunk.endsWith(']]')) {
-                        const imgName = chunk.slice(3, -2);
-                        let imgUrl = `${API_BASE_URL}/api/capture/media/${encodeURIComponent(selectedNote.category)}/${encodeURIComponent(imgName)}`;
-
-                        if (imgName.toLowerCase().endsWith('.heic')) {
-                          imgUrl += '.jpg';
-                        }
-
-                        return (
-                          <div key={i} className="inline-image-wrapper">
-                            <input
-                              className="inline-image-syntax"
-                              value={chunk}
-                              style={{ display: 'none' }} // Hidden as requested by the user
-                              onChange={() => { }}
-                            />
-                            <img
-                              src={imgUrl}
-                              alt={imgName}
-                              onClick={() => window.open(imgUrl, '_blank')}
-                            />
-                            <button
-                              className="delete-image-overlay"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const newChunks = [...chunks];
-                                newChunks[i] = ''; // Set chunk to empty string to remove it
-                                setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
-                              }}
-                              title="Remove Image"
-                            >
-                              <span className="material-icons" style={{ fontSize: '18px' }}>close</span>
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      // Normal Text Chunk
-                      return (
-                        <textarea
-                          key={i}
-                          className="editor-textarea chunked-textarea"
-                          value={chunk}
-                          ref={(el) => {
-                            if (el) {
-                              el.style.height = '0px';
-                              el.style.height = el.scrollHeight + 'px';
-                            }
-                          }}
-                          onChange={(e) => {
-                            e.target.style.height = '0px';
-                            e.target.style.height = e.target.scrollHeight + 'px';
-                            const newChunks = [...chunks];
-                            newChunks[i] = e.target.value;
-                            setSelectedNote({ ...selectedNote, content: joinNoteContent(props, newChunks.join('')) });
-                          }}
-                          onPaste={(e) => {
-                            const files = e.clipboardData.files;
-                            if (files && files.length > 0) {
-                              e.preventDefault();
-                              const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
-                              handleNoteFileUpload(files[0], i, cursorPos);
-                            }
-                          }}
-                          style={{ overflow: 'hidden', resize: 'none' }}
-                          placeholder={i === 0 ? "Start writing..." : ""}
-                        />
-                      );
-                    });
-                  })()}
-                </div>
-
-                <div className="editor-bottom-action-bar">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button
-                      className="btn btn-outline-amber btn-reanalyze"
-                      onClick={handleReanalyze}
-                      disabled={isReanalyzing}
-                      title="Re-analyze"
-                    >
-                      <span className="material-icons" style={{ fontSize: '16px' }}>
-                        {isReanalyzing ? 'sync' : 'auto_awesome'}
-                      </span>
-                      <span className="reanalyze-label">Re-analyze</span>
-                    </button>
-
-                    <div className="move-group" style={{ display: 'flex', gap: '8px' }}>
-                      <select
-                        className="editor-select"
-                        value={moveToCategory}
-                        onChange={(e) => setMoveToCategory(e.target.value)}
-                      >
-                        <option value="">Move to...</option>
-                        {taxonomies.map(cat => (
-                          <option key={cat.name} value={cat.name}>{cat.name}</option>
-                        ))}
-                      </select>
-                      <button className="btn btn-secondary btn-sm" onClick={handleMoveNote}>Move</button>
-                    </div>
-                  </div>
-
-                  <div className="action-group" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="editor-meta" style={{ marginRight: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{isSaving ? 'Saving...' : 'Saved'}</span>
-                    {/tags:[\s\S]*?- done/.test(selectedNote.content) ? (
-                      <button className="btn btn-secondary" onClick={handleUnmarkAsDone} title="Unmark as done">↺ Undone</button>
-                    ) : (
-                      <button className="btn btn-done" onClick={handleMarkAsDone} title="Mark as done">✓ Done</button>
-                    )}
-                    {noteToDelete === selectedNote.filename ? (
-                      <div className="delete-confirm-inline" style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'var(--bg-raised)', padding: '4px 8px', borderRadius: '4px' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Delete?</span>
-                        <button className="icon-btn" onClick={() => { handleDeleteNote(); setNoteToDelete(null); }} style={{ color: '#ef4444' }}>Yes</button>
-                        <button className="icon-btn" onClick={() => setNoteToDelete(null)}>No</button>
-                      </div>
-                    ) : (
-                      <button className="btn btn-warning icon-btn" onClick={() => setNoteToDelete(selectedNote.filename)} title="Delete note">
-                        <span className="material-icons" style={{ fontSize: '18px' }}>delete</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Properties Bar Footer */}
-              {Object.keys(parseNoteContent(selectedNote.content).props).length > 0 && (
-                <div className="properties-bar-container">
-                  <div className="properties-bar" onClick={() => setIsPropertiesExpanded(!isPropertiesExpanded)}>
-                    <div className="properties-bar-left">
-                      <span
-                        className="chevron-icon"
-                        style={{ transform: isPropertiesExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-                      >
-                        ▸
-                      </span>
-                      <span className="properties-bar-label">PROPERTIES</span>
-                    </div>
-                    <div className="properties-bar-right">
-                      <span>Created: {parseNoteContent(selectedNote.content).props.created || '-'}</span>
-                    </div>
-                  </div>
-                  {isPropertiesExpanded && (
-                    <div className="properties-grid-sidebar">
-                      {Object.entries(parseNoteContent(selectedNote.content).props).map(([key, value]) => (
-                        <div key={key} className="property-sidebar-row">
-                          <span className="property-sidebar-key">{key}</span>
-                          <span className="property-sidebar-value">
-                            {Array.isArray(value) ? (
-                              <div className="property-tags">
-                                {value.map((tag, i) => <span key={i} className="prop-tag">{tag}</span>)}
-                              </div>
-                            ) : String(value)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
+            <NoteEditor
+              note={selectedNote}
+              taxonomies={taxonomies}
+              API_BASE_URL={API_BASE_URL}
+              isSaving={isSaving}
+              actions={{
+                onClose: () => setSelectedNote(null),
+                onUpdateContent: (newContent) => setSelectedNote({ ...selectedNote, content: newContent }),
+                onNoteDeleted: () => handleNoteOperationComplete(selectedNote.category),
+                onNoteMoved: () => handleNoteOperationComplete(selectedNote.category),
+                onOpenSettings: () => setIsSettingsOpen(true),
+                showToast,
+                setStatusMessage
+              }}
+            />
           ) : (
             /* --- CAPTURE VIEW --- */
             <div className={`capture-layout mode-${captureMode}`}>

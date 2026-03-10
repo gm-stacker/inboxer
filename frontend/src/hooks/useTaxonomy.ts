@@ -5,7 +5,6 @@ export interface UseTaxonomyConfig {
     API_BASE_URL: string;
     setSelectedNote: Dispatch<SetStateAction<SelectedNote | null>>;
     setToastFlags: Dispatch<SetStateAction<ToastFlag[]>>;
-    setIsPropertiesExpanded: Dispatch<SetStateAction<boolean>>;
     setDynamicEchoes: Dispatch<SetStateAction<string[] | null>>;
 }
 
@@ -28,7 +27,6 @@ export function useTaxonomy({
     API_BASE_URL,
     setSelectedNote,
     setToastFlags,
-    setIsPropertiesExpanded,
     setDynamicEchoes
 }: UseTaxonomyConfig): UseTaxonomyReturn {
     const [taxonomies, setTaxonomies] = useState<TaxonomyCategory[]>([]);
@@ -140,7 +138,6 @@ export function useTaxonomy({
                     activeCategoryFetchRef.current = data.category;
                 }
                 setDynamicEchoes(null);
-                setIsPropertiesExpanded(false);
             } else {
                 setSelectedNote(null);
                 const obsidianUri = `obsidian://search?query=${encodeURIComponent(filename.replace('.md', ''))}`;
