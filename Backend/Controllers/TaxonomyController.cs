@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -15,11 +16,13 @@ namespace Backend.Controllers
     {
         private readonly string _vaultPath;
         private readonly ILogger<TaxonomyController> _logger;
+        private readonly IVaultCacheService _cacheService;
         private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
 
-        public TaxonomyController(ILogger<TaxonomyController> logger)
+        public TaxonomyController(ILogger<TaxonomyController> logger, IVaultCacheService cacheService)
         {
             _logger = logger;
+            _cacheService = cacheService;
             _vaultPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
             if (!Directory.Exists(_vaultPath))
             {
@@ -28,9 +31,10 @@ namespace Backend.Controllers
         }
 
         // For unit testing isolated vaults
-        protected TaxonomyController(string vaultPath, ILogger<TaxonomyController> logger = null)
+        protected TaxonomyController(string vaultPath, ILogger<TaxonomyController> logger = null, IVaultCacheService cacheService = null)
         {
             _logger = logger;
+            _cacheService = cacheService;
             _vaultPath = vaultPath;
             if (!Directory.Exists(_vaultPath))
             {
@@ -39,18 +43,22 @@ namespace Backend.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetTaxonomy()
+        public async Task<IActionResult> GetTaxonomy()
         {
             try
             {
-                var directories = Directory.GetDirectories(_vaultPath)
-                    .Select(d => new
-                    {
-                        Name = Path.GetFileName(d),
-                        NoteCount = Directory.GetFiles(d, "*.md").Count(f => !Path.GetFileName(f).StartsWith("."))
-                    })
-                    .OrderBy(d => d.Name)
-                    .ToList();
+                var directories = await _cacheService.GetOrAddAsync("taxonomy_list", async () =>
+                {
+                    var dirs = Directory.GetDirectories(_vaultPath)
+                        .Select(d => new
+                        {
+                            Name = Path.GetFileName(d),
+                            NoteCount = Directory.GetFiles(d, "*.md").Count(f => !Path.GetFileName(f).StartsWith("."))
+                        })
+                        .OrderBy(d => d.Name)
+                        .ToList();
+                    return await Task.FromResult(dirs);
+                });
 
                 return Ok(directories);
             }
@@ -72,34 +80,38 @@ namespace Backend.Controllers
 
             try
             {
-                var files = Directory.GetFiles(categoryPath, "*.md")
-                                     .Where(f => !Path.GetFileName(f).StartsWith("."))
-                                     .OrderByDescending(System.IO.File.GetCreationTime);
-                var notes = new System.Collections.Generic.List<object>();
-
-                foreach (var file in files)
+                var notes = await _cacheService.GetOrAddAsync($"category_notes:{category}", async () =>
                 {
-                    // Read file content for preview
-                    var contentLines = await System.IO.File.ReadAllLinesAsync(file);
-                    
-                    // Basic frontmatter stripping for preview
-                    var previewContent = string.Join("\n", contentLines);
-                    if (previewContent.StartsWith("---"))
-                    {
-                        var endFrontmatter = previewContent.IndexOf("---", 3);
-                        if (endFrontmatter > -1)
-                        {
-                            previewContent = previewContent.Substring(endFrontmatter + 3).TrimStart();
-                        }
-                    }
+                    var files = Directory.GetFiles(categoryPath, "*.md")
+                                         .Where(f => !Path.GetFileName(f).StartsWith("."))
+                                         .OrderByDescending(System.IO.File.GetCreationTime);
+                    var notesList = new System.Collections.Generic.List<object>();
 
-                    notes.Add(new
+                    foreach (var file in files)
                     {
-                        Filename = Path.GetFileName(file),
-                        Preview = new string(previewContent.Take(100).ToArray()) + (previewContent.Length > 100 ? "..." : ""),
-                        CreatedAt = System.IO.File.GetCreationTime(file).ToString("yyyy-MM-dd HH:mm")
-                    });
-                }
+                        // Read file content for preview
+                        var contentLines = await System.IO.File.ReadAllLinesAsync(file);
+                        
+                        // Basic frontmatter stripping for preview
+                        var previewContent = string.Join("\n", contentLines);
+                        if (previewContent.StartsWith("---"))
+                        {
+                            var endFrontmatter = previewContent.IndexOf("---", 3);
+                            if (endFrontmatter > -1)
+                            {
+                                previewContent = previewContent.Substring(endFrontmatter + 3).TrimStart();
+                            }
+                        }
+
+                        notesList.Add(new
+                        {
+                            Filename = Path.GetFileName(file),
+                            Preview = new string(previewContent.Take(100).ToArray()) + (previewContent.Length > 100 ? "..." : ""),
+                            CreatedAt = System.IO.File.GetCreationTime(file).ToString("yyyy-MM-dd HH:mm")
+                        });
+                    }
+                    return notesList;
+                });
 
                 return Ok(notes);
             }
@@ -137,6 +149,11 @@ namespace Backend.Controllers
                 // For this minimal viable version, we just rename the directory.
                 Directory.Move(oldPath, newPath);
                 
+                // Dual Invalidation: Synchronous for instant read freshness
+                _cacheService.RemoveByPrefix("taxonomy_list");
+                _cacheService.Remove($"category_notes:{oldName}");
+                _cacheService.Remove($"category_notes:{request.NewName}");
+                
                 return Ok(new { message = $"Category renamed from {oldName} to {request.NewName}" });
             }
             catch (Exception ex)
@@ -151,7 +168,10 @@ namespace Backend.Controllers
             var filePath = Path.Combine(_vaultPath, category, filename);
             if (System.IO.File.Exists(filePath))
             {
-                var content = await System.IO.File.ReadAllTextAsync(filePath);
+                var content = await _cacheService.GetOrAddAsync($"note_detail:{category}:{filename}", async () =>
+                {
+                    return await System.IO.File.ReadAllTextAsync(filePath);
+                });
                 return Ok(new { Filename = filename, Content = content, Category = category });
             }
 
@@ -164,9 +184,12 @@ namespace Backend.Controllers
 
             if (fuzzyMatch != null)
             {
-                var content = await System.IO.File.ReadAllTextAsync(fuzzyMatch);
                 var actualCategory = Path.GetFileName(Path.GetDirectoryName(fuzzyMatch) ?? string.Empty);
                 var actualFilename = Path.GetFileName(fuzzyMatch);
+                var content = await _cacheService.GetOrAddAsync($"note_detail:{actualCategory}:{actualFilename}", async () =>
+                {
+                    return await System.IO.File.ReadAllTextAsync(fuzzyMatch);
+                });
                 return Ok(new { Filename = actualFilename, Content = content, Category = actualCategory });
             }
 
@@ -180,6 +203,11 @@ namespace Backend.Controllers
             if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
 
             await System.IO.File.WriteAllTextAsync(filePath, request.Content);
+
+            // Dual Invalidation
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+            _cacheService.Remove($"category_notes:{category}");
+
             return Ok(new { message = "Note updated successfully." });
         }
 
@@ -212,6 +240,11 @@ namespace Backend.Controllers
                 _writeLock.Release();
             }
 
+            // Dual Invalidation
+            _cacheService.RemoveByPrefix("taxonomy_list");
+            _cacheService.Remove($"category_notes:{category}");
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+
             return Ok(new { message = "Note deleted successfully." });
         }
 
@@ -227,6 +260,14 @@ namespace Backend.Controllers
             if (System.IO.File.Exists(newPath)) return Conflict("A note with this name already exists in the target category.");
 
             System.IO.File.Move(oldPath, newPath);
+
+            // Dual Invalidation
+            _cacheService.RemoveByPrefix("taxonomy_list");
+            _cacheService.Remove($"category_notes:{category}");
+            _cacheService.Remove($"category_notes:{request.TargetCategory}");
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+            _cacheService.Remove($"note_detail:{request.TargetCategory}:{filename}");
+
             return Ok(new { message = "Note moved successfully." });
         }
 
@@ -239,6 +280,11 @@ namespace Backend.Controllers
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = AddDoneToFrontmatter(content);
             await System.IO.File.WriteAllTextAsync(filePath, updatedContent);
+
+            // Dual Invalidation
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+            _cacheService.Remove($"category_notes:{category}");
+
             return Ok(new { message = "Note marked as done." });
         }
 
@@ -317,6 +363,11 @@ namespace Backend.Controllers
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = RemoveDoneFromFrontmatter(content);
             await System.IO.File.WriteAllTextAsync(filePath, updatedContent);
+
+            // Dual Invalidation
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+            _cacheService.Remove($"category_notes:{category}");
+
             return Ok(new { message = "Note unmarked as done." });
         }
 
@@ -475,6 +526,13 @@ namespace Backend.Controllers
             if (System.IO.File.Exists(newPath)) return Conflict("A note with this name already exists.");
 
             System.IO.File.Move(oldPath, newPath);
+
+            // Dual Invalidation
+            _cacheService.Remove($"category_notes:{category}");
+            _cacheService.Remove($"note_detail:{category}:{filename}");
+            _cacheService.Remove($"note_detail:{category}:{newName}");
+            _cacheService.RemoveByPrefix("taxonomy_list");
+
             return Ok(new { message = "Note renamed successfully.", newFilename = newName });
         }
     }

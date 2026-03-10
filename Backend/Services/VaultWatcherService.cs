@@ -20,18 +20,20 @@ namespace Backend.Services
     {
         private readonly ILogger<VaultWatcherService> _logger;
         private readonly IConfiguration _config;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IGeminiService _geminiService;
+        private readonly IVaultCacheService _cacheService;
         private FileSystemWatcher? _watcher;
         private string _vaultPath;
         
         // Debounce dictionary: file path -> debounce timer CTS
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _debounceTimers = new();
 
-        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IHttpClientFactory httpClientFactory)
+        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IGeminiService geminiService, IVaultCacheService cacheService)
         {
             _logger = logger;
             _config = config;
-            _httpClientFactory = httpClientFactory;
+            _geminiService = geminiService;
+            _cacheService = cacheService;
             
             _vaultPath = _config["VAULT_PATH"];
             
@@ -87,6 +89,7 @@ namespace Backend.Services
             _watcher.Changed += OnFileChanged;
             _watcher.Created += OnFileChanged;
             _watcher.Renamed += OnFileChanged;
+            _watcher.Deleted += OnFileChanged;
 
             _watcher.EnableRaisingEvents = true;
             _logger.LogInformation($"VaultWatcherService started tracking: {_vaultPath}");
@@ -130,6 +133,20 @@ namespace Backend.Services
         {
             try
             {
+                var filename = Path.GetFileName(filePath);
+                var category = Path.GetFileName(Path.GetDirectoryName(filePath) ?? string.Empty);
+
+                // Watcher-side Invalidation Strategy (Safety Net)
+                _cacheService.Remove($"note_detail:{category}:{filename}");
+                _cacheService.Remove($"category_notes:{category}");
+                _cacheService.Remove("taxonomy_list");
+
+                if (!File.Exists(filePath))
+                {
+                    _logger.LogInformation($"File removed or missing during processing: {filePath}. Cache invalidated.");
+                    return;
+                }
+
                 _logger.LogInformation($"Processing modified vault file: {filePath}");
 
                 // Basic exponential backoff if file is locked
@@ -267,12 +284,6 @@ namespace Backend.Services
         {
             try
             {
-                var apiKey = _config["GEMINI_API_KEY"];
-                if (string.IsNullOrEmpty(apiKey)) return null;
-
-                var client = _httpClientFactory.CreateClient();
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={apiKey}";
-
                 var systemPrompt = @"You are a data extraction engine for markdown notes.
 Analyze the raw text and extract metadata into the following JSON schema exactly.
 {
@@ -284,42 +295,11 @@ Analyze the raw text and extract metadata into the following JSON schema exactly
 }
 Return ONLY valid JSON.";
 
-                var requestPayload = new
-                {
-                    system_instruction = new { parts = new { text = systemPrompt } },
-                    contents = new[] { new { parts = new[] { new { text = bodyText } } } },
-                    generationConfig = new
-                    {
-                        temperature = 0.1,
-                        response_mime_type = "application/json"
-                    }
-                };
-
-                var requestContent = new StringContent(JsonSerializer.Serialize(requestPayload), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, requestContent);
-                var jsonStr = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogError($"Gemini API error in Watcher: {response.StatusCode} {jsonStr}");
-                    return null;
-                }
-
-                using var doc = JsonDocument.Parse(jsonStr);
-                var contentText = doc.RootElement
-                                      .GetProperty("candidates")[0]
-                                      .GetProperty("content")
-                                      .GetProperty("parts")[0]
-                                      .GetProperty("text")
-                                      .GetString();
+                var contentText = await _geminiService.GenerateAsync(systemPrompt, bodyText, "application/json", 0.1);
 
                 if (string.IsNullOrWhiteSpace(contentText)) return null;
 
-                // Clean markdown code blocks if present
-                var cleanJson = Regex.Replace(contentText, @"```json\s*", "");
-                cleanJson = Regex.Replace(cleanJson, @"```\s*$", "");
-
-                return JsonSerializer.Deserialize<EnrichmentPayload>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return JsonSerializer.Deserialize<EnrichmentPayload>(contentText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             catch (Exception ex)
             {
