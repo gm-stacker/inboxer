@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
+import { getBriefing, getVaultConfig, saveVaultConfig, clearVaultConfig, renameCategory, getNoteDetail, updateNoteContent, getTaxonomies, getCategoryNotes, synthesizeEchoes, moveNote, saveConversation, submitChat, captureRawText } from './services/api';
 import './App.css'
 import TimelineTableToggle from './components/TimelineTableToggle';
 import type { SelectedNote, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
@@ -122,8 +123,6 @@ const parseQuerySummary = (
 // Variables moved to session storage
 
 function App() {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:6130';
-
   // Properties Panel State
   // extracted to NoteEditor
 
@@ -172,7 +171,6 @@ function App() {
     handleSelectCategory,
     handleSelectSourceFile
   } = useTaxonomy({
-    API_BASE_URL,
     setSelectedNote,
     setToastFlags,
     setDynamicEchoes
@@ -210,12 +208,10 @@ function App() {
   const fetchMorningBriefing = async () => {
     setIsLoadingBriefing(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/briefing`);
-      if (res.ok) {
-        const data = await res.json();
-        setBriefingData(data);
-        setIsBriefingVisible(true);
-      }
+      const res = await getBriefing();
+      const data = await res.json();
+      setBriefingData(data);
+      setIsBriefingVisible(true);
     } catch (err) {
       console.error('Failed to fetch morning briefing', err);
     } finally {
@@ -246,11 +242,9 @@ function App() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config/vault`)
-      if (res.ok) {
-        const data = await res.json()
-        setVaultPath(data.vaultPath)
-      }
+      const res = await getVaultConfig();
+      const data = await res.json();
+      setVaultPath(data.vaultPath);
     } catch (err) {
       console.error('Failed to fetch config', err)
     }
@@ -258,18 +252,10 @@ function App() {
 
   const handleSaveConfig = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config/vault`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vaultPath })
-      });
-      if (res.ok) {
-        showToast('Vault path saved. The backend is tracking this directory.');
-        setIsSettingsOpen(false);
-        fetchTaxonomy();
-      } else {
-        showToast('Failed to save config.');
-      }
+      await saveVaultConfig(vaultPath);
+      showToast('Vault path saved. The backend is tracking this directory.');
+      setIsSettingsOpen(false);
+      fetchTaxonomy();
     } catch (err) {
       console.error(err);
     }
@@ -279,22 +265,15 @@ function App() {
     if (clearConfirmText.toLowerCase() !== 'delete') return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config/vault/clear`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        showToast('Vault cleared successfully.');
-        setIsClearing(false);
-        setClearConfirmText('');
-        setIsClearConfirming(false);
-        setIsSettingsOpen(false);
-        setSelectedNote(null);
-        setSelectedCategory(null);
-        fetchTaxonomy();
-      } else {
-        const err = await res.text();
-        showToast('Failed to clear vault: ' + err);
-      }
+      await clearVaultConfig();
+      showToast('Vault cleared successfully.');
+      setIsClearing(false);
+      setClearConfirmText('');
+      setIsClearConfirming(false);
+      setIsSettingsOpen(false);
+      setSelectedNote(null);
+      setSelectedCategory(null);
+      fetchTaxonomy();
     } catch (err) {
       console.error(err);
       showToast('Network error clearing vault.');
@@ -316,22 +295,12 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${oldName}/rename`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ new_name: renameValue }),
-      })
-      if (res.ok) {
-        setIsRenaming(null)
-        if (selectedCategory === oldName) {
-          setSelectedCategory(renameValue)
-        }
-        await fetchTaxonomy()
-      } else {
-        showToast('Failed to rename')
+      await renameCategory(oldName, renameValue);
+      setIsRenaming(null)
+      if (selectedCategory === oldName) {
+        setSelectedCategory(renameValue)
       }
+      await fetchTaxonomy()
     } catch (err) {
       console.error(err)
     }
@@ -340,12 +309,10 @@ function App() {
   const handleSelectNote = async (filename: string) => {
     if (!selectedCategory) return
     try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedCategory}/notes/${filename}`)
-      if (res.ok) {
-        const data = await res.json()
-        setSelectedNote({ filename: data.filename, content: data.content, category: data.category })
-        setDynamicEchoes(null) // reset on new note
-      }
+      const res = await getNoteDetail(selectedCategory, filename);
+      const data = await res.json();
+      setSelectedNote({ filename: data.filename, content: data.content, category: data.category });
+      setDynamicEchoes(null); // reset on new note
     } catch (err) {
       console.error('Failed to fetch note details', err)
     }
@@ -362,23 +329,15 @@ function App() {
     const saveNote = async () => {
       setIsSaving(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/api/taxonomy/${selectedNote.category}/notes/${selectedNote.filename}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: selectedNote.content })
-        });
-        if (res.ok) {
-          // Optimization: Skip GET request after auto-save.
-          // Note UI in sidebar will update on next manual fetch or category switch.
-          if (selectedCategory === selectedNote.category) {
-            setCategoryNotes(prev => prev.map(n =>
-              n.filename === selectedNote.filename
-                ? { ...n, content: selectedNote.content }
-                : n
-            ));
-          }
-        } else {
-          setStatusMessage('Failed to auto-save.');
+        await updateNoteContent(selectedNote.category, selectedNote.filename, selectedNote.content);
+        // Optimization: Skip GET request after auto-save.
+        // Note UI in sidebar will update on next manual fetch or category switch.
+        if (selectedCategory === selectedNote.category) {
+          setCategoryNotes(prev => prev.map(n =>
+            n.filename === selectedNote.filename
+              ? { ...n, content: selectedNote.content }
+              : n
+          ));
         }
       } catch {
         setStatusMessage('Network Error saving.');
@@ -388,7 +347,7 @@ function App() {
     };
 
     saveNote();
-  }, [selectedNote?.content, selectedNote?.filename, selectedNote?.category, API_BASE_URL]);
+  }, [selectedNote?.content, selectedNote?.filename, selectedNote?.category]);
 
   const handleNoteOperationComplete = async (refreshCategory?: string) => {
     setSelectedNote(null);
@@ -401,16 +360,15 @@ function App() {
 
   const fetchCompletedNotes = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/taxonomy`);
-      if (!res.ok) return;
+      const res = await getTaxonomies();
       const cats = await res.json();
       const done: Array<{ filename: string; category: string; doneAt: string }> = [];
       for (const cat of cats) {
-        const notesRes = await fetch(`${API_BASE_URL}/api/taxonomy/${cat.name}/notes`);
+        const notesRes = await getCategoryNotes(cat.name);
         if (!notesRes.ok) continue;
         const notes = await notesRes.json();
         for (const n of notes) {
-          const detailRes = await fetch(`${API_BASE_URL}/api/taxonomy/${cat.name}/notes/${n.filename}`);
+          const detailRes = await getNoteDetail(cat.name, n.filename);
           if (!detailRes.ok) continue;
           const detail = await detailRes.json();
           const content: string = detail.content || '';
@@ -432,18 +390,10 @@ function App() {
     setIsGeneratingEchoes(true);
     setStatusMessage('Synthesizing memory echoes...');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/insights/echoes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: selectedNote.content, excludeFilename: selectedNote.filename })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDynamicEchoes(data);
-        setStatusMessage('');
-      } else {
-        setStatusMessage('Error synthesizing echoes.');
-      }
+      const res = await synthesizeEchoes(selectedNote.content, selectedNote.filename);
+      const data = await res.json();
+      setDynamicEchoes(data.echoes);
+      setStatusMessage('');
     } catch (err) {
       console.error(err);
       setStatusMessage('Error synthesizing echoes.');
@@ -477,11 +427,7 @@ function App() {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'))
       if (data.sourceCategory === targetCategory) return // Dropped in same folder
 
-      await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(data.sourceCategory)}/notes/${encodeURIComponent(data.filename)}/move`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_category: targetCategory })
-      })
+      await moveNote(data.sourceCategory, data.filename, targetCategory);
 
       // Refresh view
       await fetchTaxonomy()
@@ -512,19 +458,10 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/capture/conversation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: transcript }),
-      });
-
-      if (response.ok) {
-        setStatusMessage('Conversation saved securely.');
-        await fetchTaxonomy();
-        setTimeout(() => setStatusMessage(''), 3000);
-      } else {
-        setStatusMessage('Failed to save conversation.');
-      }
+      await saveConversation(transcript);
+      setStatusMessage('Conversation saved securely.');
+      await fetchTaxonomy();
+      setTimeout(() => setStatusMessage(''), 3000);
     } catch {
       setStatusMessage('Network error saving conversation.');
     }
@@ -542,47 +479,38 @@ function App() {
     setAmbientChatHistory(newHistory);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, conversationHistory: ambientChatHistory }),
-      });
+      const response = await submitChat(userMessage, ambientChatHistory);
+      const data = await response.json();
+      const aiReply = data.reply;
+      const flags: string[] = data.flags || [];
 
-      if (response.ok) {
-        const data = await response.json();
-        const aiReply = data.reply;
-        const flags: string[] = data.flags || [];
+      // Apply Tone Prefix based on content
+      let finalReply = aiReply;
+      const replyLower = aiReply.toLowerCase();
+      if (replyLower.includes('flight') || replyLower.includes('travel') || replyLower.includes('trip')) {
+        finalReply = `✈️ ${finalReply}`;
+      } else if (replyLower.includes('task') || replyLower.includes('remember') || replyLower.includes('don\'t forget')) {
+        finalReply = `✅ ${finalReply}`;
+      }
 
-        // Apply Tone Prefix based on content
-        let finalReply = aiReply;
-        const replyLower = aiReply.toLowerCase();
-        if (replyLower.includes('flight') || replyLower.includes('travel') || replyLower.includes('trip')) {
-          finalReply = `✈️ ${finalReply}`;
-        } else if (replyLower.includes('task') || replyLower.includes('remember') || replyLower.includes('don\'t forget')) {
-          finalReply = `✅ ${finalReply}`;
-        }
+      setAmbientChatHistory(prev => [...prev, { role: 'assistant', content: finalReply }]);
 
-        setAmbientChatHistory(prev => [...prev, { role: 'assistant', content: finalReply }]);
+      // Display Toasts
+      if (flags.length > 0) {
+        flags.forEach((flag, idx) => {
+          setTimeout(() => {
+            const newToastId = Date.now().toString() + idx;
+            setToastFlags(prev => [...prev, { id: newToastId, message: flag }]);
 
-        // Display Toasts
-        if (flags.length > 0) {
-          flags.forEach((flag, idx) => {
+            // Auto-dismiss after 8 seconds
             setTimeout(() => {
-              const newToastId = Date.now().toString() + idx;
-              setToastFlags(prev => [...prev, { id: newToastId, message: flag }]);
-
-              // Auto-dismiss after 8 seconds
-              setTimeout(() => {
-                setToastFlags(prev => prev.filter(t => t.id !== newToastId));
-              }, 8000);
-            }, idx * 500); // Stagger slightly
-          });
-        }
-      } else {
-        setAmbientChatHistory(prev => [...prev, { role: 'assistant', content: "I'm having trouble connecting to your vault right now." }]);
+              setToastFlags(prev => prev.filter(t => t.id !== newToastId));
+            }, 8000);
+          }, idx * 500); // Stagger slightly
+        });
       }
     } catch {
-      setAmbientChatHistory(prev => [...prev, { role: 'assistant', content: "Network error occurred." }]);
+      setAmbientChatHistory(prev => [...prev, { role: 'assistant', content: "I'm having trouble connecting to your vault right now." }]);
     } finally {
       setIsAmbientTyping(false);
       // Auto-scroll
@@ -597,17 +525,10 @@ function App() {
     if (!quickAddText.trim()) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/capture`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: quickAddText }),
-      });
-
-      if (response.ok) {
-        setQuickAddText('');
-        setIsQuickAddOpen(false);
-        await fetchTaxonomy();
-      }
+      await captureRawText(quickAddText);
+      setQuickAddText('');
+      setIsQuickAddOpen(false);
+      await fetchTaxonomy();
     } catch (err) {
       console.error('Failed quick add', err);
     }
@@ -620,7 +541,6 @@ function App() {
 
       {/* --- SIDEBAR --- */}
       <Sidebar
-        API_BASE_URL={API_BASE_URL}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         isSearching={isSearching}
@@ -711,7 +631,6 @@ function App() {
             <NoteEditor
               note={selectedNote}
               taxonomies={taxonomies}
-              API_BASE_URL={API_BASE_URL}
               isSaving={isSaving}
               actions={{
                 onClose: () => setSelectedNote(null),
@@ -725,7 +644,6 @@ function App() {
             />
           ) : (
             <CaptureView
-              API_BASE_URL={API_BASE_URL}
               selectedCategory={selectedCategory}
               handleSelectCategory={handleSelectCategory}
               fetchTaxonomy={fetchTaxonomy}

@@ -1,9 +1,9 @@
 import React from 'react';
+import { getNoteDetail } from '../../services/api';
 import type { TaxonomyCategory, NotePreview, SearchResult, SelectedNote } from '../../types/index';
 import { getDisplayTitle } from '../../utils/noteUtils';
 
 export interface SidebarProps {
-    API_BASE_URL: string;
     searchQuery: string;
     setSearchQuery: (q: string) => void;
     isSearching: boolean;
@@ -32,7 +32,6 @@ export interface SidebarProps {
 }
 
 export function Sidebar({
-    API_BASE_URL,
     searchQuery,
     setSearchQuery,
     isSearching,
@@ -235,7 +234,7 @@ export function Sidebar({
                                         className={`note-item ${selectedNote?.filename === n.filename ? 'active' : ''}`}
                                         onClick={() => {
                                             setSelectedCategory(n.category);
-                                            fetch(`${API_BASE_URL}/api/taxonomy/${n.category}/notes/${n.filename}`)
+                                            getNoteDetail(n.category, n.filename)
                                                 .then(r => r.json())
                                                 .then(d => setSelectedNote({ filename: d.filename, content: d.content, category: d.category }))
                                                 .catch(console.error);

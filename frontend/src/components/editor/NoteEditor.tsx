@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { uploadMediaCapture, deleteNote, markNoteAsDone, unmarkNoteAsDone, moveNote, reanalyzeNote, getMediaUrl } from '../../services/api';
 import type { SelectedNote, TaxonomyCategory } from '../../types';
 import { parseNoteContent, joinNoteContent } from '../../utils/noteUtils';
 
@@ -15,7 +16,6 @@ interface EditorActions {
 export interface NoteEditorProps {
     note: SelectedNote;
     taxonomies: TaxonomyCategory[];
-    API_BASE_URL: string;
     isSaving: boolean;
     actions: EditorActions;
 }
@@ -23,7 +23,6 @@ export interface NoteEditorProps {
 export const NoteEditor: React.FC<NoteEditorProps> = ({
     note,
     taxonomies,
-    API_BASE_URL,
     isSaving,
     actions
 }) => {
@@ -110,10 +109,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             const formData = new FormData();
             formData.append('file', file);
             formData.append('category', note.category);
-            const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
-                method: 'POST',
-                body: formData,
-            });
+            const res = await uploadMediaCapture(formData);
             if (res.ok) {
                 const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
                 const chunks = [...latestChunksRef.current];
@@ -132,7 +128,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         } finally {
             setIsUploadingToNote(false);
         }
-    }, [note.category, API_BASE_URL, actions, syncToParent]);
+    }, [note.category, actions, syncToParent]);
 
     const handleNoteFileSelect = useCallback(async (file: File) => {
         setIsUploadingToNote(true);
@@ -140,10 +136,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             const formData = new FormData();
             formData.append('file', file);
             formData.append('category', note.category);
-            const res = await fetch(`${API_BASE_URL}/api/capture/upload`, {
-                method: 'POST',
-                body: formData,
-            });
+            const res = await uploadMediaCapture(formData);
             if (res.ok) {
                 const embed = file.type.startsWith('image') ? `![[${file.name.replace(/ /g, '_')}]]` : `[[${file.name.replace(/ /g, '_')}]]`;
                 const chunks = [...latestChunksRef.current];
@@ -161,19 +154,13 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         } finally {
             setIsUploadingToNote(false);
         }
-    }, [note.category, API_BASE_URL, actions, syncToParent]);
+    }, [note.category, actions, syncToParent]);
 
     const handleDeleteNote = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy/${encodeURIComponent(note.category)}/notes/${encodeURIComponent(note.filename)}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                actions.onNoteDeleted();
-                actions.showToast('Note deleted');
-            } else {
-                actions.showToast('Failed to delete note');
-            }
+            await deleteNote(note.category, note.filename);
+            actions.onNoteDeleted();
+            actions.showToast('Note deleted');
         } catch (err) {
             console.error(err);
             actions.showToast('Network error deleting note');
@@ -182,16 +169,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
     const handleMarkAsDone = async () => {
         try {
-            const res = await fetch(
-                `${API_BASE_URL}/api/taxonomy/${note.category}/notes/${note.filename}/done`,
-                { method: 'POST' }
-            );
-            if (res.ok) {
-                actions.onNoteDeleted(); // Effectively the same as deleted from the open view
-                actions.showToast('Note moved to Completed.');
-            } else {
-                actions.showToast('Failed to mark note as done.');
-            }
+            await markNoteAsDone(note.category, note.filename);
+            actions.onNoteDeleted(); // Effectively the same as deleted from the open view
+            actions.showToast('Note moved to Completed.');
         } catch (err) {
             console.error(err);
             actions.showToast('Network error marking note as done.');
@@ -201,16 +181,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     const handleUnmarkAsDone = async () => {
         try {
             actions.showToast('Unmarking note as done...');
-            const res = await fetch(
-                `${API_BASE_URL}/api/taxonomy/${note.category}/notes/${note.filename}/done`,
-                { method: 'DELETE' }
-            );
-            if (res.ok) {
-                actions.onNoteDeleted();
-                actions.showToast('Note removed from Completed.');
-            } else {
-                actions.showToast('Failed to unmark note as done.');
-            }
+            await unmarkNoteAsDone(note.category, note.filename);
+            actions.onNoteDeleted();
+            actions.showToast('Note removed from Completed.');
         } catch (err) {
             console.error(err);
             actions.showToast('Network error unmarking note as done.');
@@ -220,18 +193,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     const handleMoveNote = async () => {
         if (!moveToCategory) return;
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy/${note.category}/notes/${note.filename}/move`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_category: moveToCategory })
-            });
-            if (res.ok) {
-                setIsPropertiesExpanded(false);
-                actions.onNoteMoved(note.category); // Pass old category so parent knows what to refresh
-                actions.showToast(`Note moved to ${moveToCategory}`);
-            } else {
-                actions.showToast('Failed to move note.');
-            }
+            await moveNote(note.category, note.filename, moveToCategory);
+            setIsPropertiesExpanded(false);
+            actions.onNoteMoved(note.category); // Pass old category so parent knows what to refresh
+            actions.showToast(`Note moved to ${moveToCategory}`);
         } catch (err) {
             console.error(err);
             actions.showToast('Network error moving note');
@@ -252,18 +217,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         const cleanedContent = joinNoteContent(protectedProps, parsed.body);
 
         try {
-            const res = await fetch(`${API_BASE_URL}/api/taxonomy/${note.category}/notes/${note.filename}/reanalyze`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: cleanedContent })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                actions.onUpdateContent(data.content);
-                actions.setStatusMessage('');
-            } else {
-                actions.setStatusMessage('Failed to re-analyze.');
-            }
+            const res = await reanalyzeNote(note.category, note.filename, cleanedContent);
+            const data = await res.json();
+            actions.onUpdateContent(data.content);
+            actions.setStatusMessage('');
         } catch (err) {
             console.error('Reanalyze error:', err);
             actions.setStatusMessage('Network Error during re-analyze.');
@@ -357,7 +314,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                     const match = chunk.match(/!\[\[(.*?)\]\]/);
                     if (match) {
                         const imgName = match[1];
-                        let imgUrl = `${API_BASE_URL}/api/capture/media/${encodeURIComponent(note.category)}/${encodeURIComponent(imgName)}`;
+                        let imgUrl = getMediaUrl(note.category, imgName);
 
                         if (imgName.toLowerCase().endsWith('.heic')) {
                             imgUrl += '.jpg';
