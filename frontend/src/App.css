@@ -2961,3 +2961,81 @@ textarea.chunked-textarea {
 .close-btn:hover {
   color: var(--c-text);
 }
+
+/* --- PLACE CARD (ENRICHMENT) --- */
+.place-card {
+  display: flex;
+  gap: 16px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 24px 0 24px;
+  align-items: flex-start;
+}
+
+.place-card-photo {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--c-active);
+}
+
+.place-card-photo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-active);
+}
+
+.place-card-photo-icon {
+  color: var(--text-muted);
+}
+
+.place-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.place-card-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.place-card-address {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.place-card-rating {
+  color: var(--ai-accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.place-card-link {
+  font-size: 0.8rem;
+  color: var(--c-accent);
+  text-decoration: none;
+  font-weight: 500;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.place-card-link-icon {
+  font-size: 12px;
+}
+
+.place-card-link:hover {
+  text-decoration: underline;
+}

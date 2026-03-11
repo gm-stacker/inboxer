@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { uploadMediaCapture, deleteNote, markNoteAsDone, unmarkNoteAsDone, moveNote, reanalyzeNote, getMediaUrl } from '../../services/api';
 import type { SelectedNote, TaxonomyCategory } from '../../types';
 import { parseNoteContent, joinNoteContent } from '../../utils/noteUtils';
+import type { PlaceCardProps } from '../../types';
 
 interface EditorActions {
     onClose: () => void;
@@ -12,6 +13,34 @@ interface EditorActions {
     showToast: (msg: string) => void;
     setStatusMessage: (msg: string) => void;
 }
+
+const PlaceCard: React.FC<PlaceCardProps> = ({ name, address, rating, mapsUrl, photoReference }) => {
+    return (
+        <div className="place-card">
+            {photoReference ? (
+                <img 
+                    className="place-card-photo" 
+                    src={`http://localhost:6130/api/places/photo?reference=${photoReference}`} 
+                    alt={name || address} 
+                />
+            ) : (
+                <div className="place-card-photo place-card-photo-fallback">
+                     <span className="material-icons place-card-photo-icon">place</span>
+                </div>
+            )}
+            <div className="place-card-details">
+                {name && <h4 className="place-card-title">{name}</h4>}
+                <span className="place-card-address">{address}</span>
+                <span className="place-card-rating">★ {rating}</span>
+                {mapsUrl && (
+                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="place-card-link">
+                        View on Google Maps <span className="material-icons place-card-link-icon">open_in_new</span>
+                    </a>
+                )}
+            </div>
+        </div>
+    );
+};
 
 export interface NoteEditorProps {
     note: SelectedNote;
@@ -267,6 +296,16 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 onBlur={handleBlur}
                 placeholder="Note title..."
             />
+
+            {parsedContent.props.type === 'place' && parsedContent.props.address && (
+                <PlaceCard 
+                    name={latestTitleRef.current}
+                    address={parsedContent.props.address as string}
+                    rating={parsedContent.props.rating as number || 0}
+                    mapsUrl={parsedContent.props.maps_url as string || ''}
+                    photoReference={parsedContent.props.photo_reference as string || ''}
+                />
+            )}
 
             {/* Hidden file input for note editor */}
             <input

@@ -81,3 +81,11 @@ export interface MorningBriefing {
     patterns: string;
     focus: string;
 }
+
+export interface PlaceCardProps {
+    name?: string;
+    address: string;
+    rating: string | number;
+    mapsUrl: string;
+    photoReference: string;
+}

@@ -22,6 +22,7 @@ namespace Backend.Services
         private readonly IConfiguration _config;
         private readonly IGeminiService _geminiService;
         private readonly IVaultCacheService _cacheService;
+        private readonly IPlacesEnrichmentService _placesEnrichmentService;
         private FileSystemWatcher? _watcher;
         private string _vaultPath;
         private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
@@ -29,12 +30,13 @@ namespace Backend.Services
         // Debounce dictionary: file path -> debounce timer CTS
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _debounceTimers = new();
 
-        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IGeminiService geminiService, IVaultCacheService cacheService)
+        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IGeminiService geminiService, IVaultCacheService cacheService, IPlacesEnrichmentService placesEnrichmentService)
         {
             _logger = logger;
             _config = config;
             _geminiService = geminiService;
             _cacheService = cacheService;
+            _placesEnrichmentService = placesEnrichmentService;
             
             _vaultPath = _config["VAULT_PATH"];
             
@@ -197,15 +199,31 @@ namespace Backend.Services
                 }
 
                 // Check hash
+                bool bodyChanged = true;
                 if (existingProps.TryGetValue("body_hash", out var storedHashObj) && storedHashObj?.ToString() == currentBodyHash)
                 {
-                    _logger.LogInformation($"Skipping {filePath} - body hash matches stored hash.");
+                    bodyChanged = false;
+                }
+
+                bool needsPlacesEnrichment = false;
+                if (existingProps.TryGetValue("type", out var tOut) && tOut?.ToString() == "place" && !existingProps.ContainsKey("maps_url"))
+                {
+                    needsPlacesEnrichment = true;
+                }
+
+                if (!bodyChanged && !needsPlacesEnrichment)
+                {
+                    _logger.LogInformation($"Skipping {filePath} - body hash matches stored hash and no places enrichment needed.");
                     return;
                 }
 
-                // File body changed. Send to Gemini.
-                _logger.LogInformation($"Body change detected for {filePath}. Sending to AI for taxonomy enrichment...");
-                var enrichedProps = await CallGeminiEnrichmentAsync(body);
+                EnrichmentPayload? enrichedProps = null;
+                if (bodyChanged)
+                {
+                    // File body changed. Send to Gemini.
+                    _logger.LogInformation($"Body change detected for {filePath}. Sending to AI for taxonomy enrichment...");
+                    enrichedProps = await CallGeminiEnrichmentAsync(body);
+                }
 
                 // Surgical merge
                 // Obsidian requires properties like arrays to be proper YAML lists
@@ -227,6 +245,24 @@ namespace Backend.Services
                             metricsDict[kvp.Key] = kvp.Value;
                         }
                         existingProps["metrics"] = metricsDict;
+                    }
+                }
+
+                if (existingProps.TryGetValue("type", out var tFinal) && tFinal?.ToString() == "place" && !existingProps.ContainsKey("maps_url"))
+                {
+                    needsPlacesEnrichment = true;
+                }
+
+                if (needsPlacesEnrichment)
+                {
+                    var title = Path.GetFileNameWithoutExtension(filename);
+                    var placeProps = await _placesEnrichmentService.EnrichPlaceAsync(body, title);
+                    if (placeProps != null && !string.IsNullOrEmpty(placeProps.Address))
+                    {
+                        existingProps["address"] = placeProps.Address;
+                        if (placeProps.Rating > 0) existingProps["rating"] = placeProps.Rating;
+                        existingProps["maps_url"] = placeProps.MapsUrl;
+                        if (!string.IsNullOrEmpty(placeProps.PhotoReference)) existingProps["photo_reference"] = placeProps.PhotoReference;
                     }
                 }
 
@@ -324,14 +360,5 @@ Return ONLY valid JSON.";
                 return null;
             }
         }
-    }
-
-    public class EnrichmentPayload
-    {
-        public string? Type { get; set; }
-        public string[]? Tags { get; set; }
-        public string? ExtractedDate { get; set; }
-        public string[]? Entities { get; set; }
-        public Dictionary<string, object>? Metrics { get; set; }
     }
 }
