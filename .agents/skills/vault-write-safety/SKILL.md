@@ -56,11 +56,28 @@ See `obsidian-frontmatter-schema` skill for the exact frontmatter schema.
 When writing updated frontmatter, the note body (everything after `---\n`) must be preserved byte-for-byte.
 Never re-encode or normalise line endings — Obsidian is sensitive to these.
 
-### 5. Never write while vault cache is being read
-Vault writes must use a lock to prevent concurrent read/write corruption.
-- **Lock Scoping:** A `private static SemaphoreSlim` on a controller only serializes writes within that controller class. Concurrent writes from different controllers (e.g. CaptureController and TaxonomyController writing simultaneously) will bypass each other's lock entirely.
-- Use a centralized lock injected as a singleton (e.g. `VaultWriteLocker` service) to serialize all vault writes across the entire application.
-- If a global lock is not yet implemented, document the static controller lock as a known architectural limitation in the task walkthrough.
+### 5. All vault writes must use IVaultWriteLocker
+All vault writes are serialised through the `IVaultWriteLocker` singleton injected via DI.
+This guarantees application-wide write safety across all controllers and services.
+
+```csharp
+await _writeLocker.WaitAsync();
+try
+{
+    // vault write here
+}
+finally
+{
+    _writeLocker.Release();
+}
+```
+
+**Do NOT use a `private static SemaphoreSlim` on a controller or service.** A per-class lock
+only serialises writes within that class — concurrent writes from different controllers will
+bypass each other's lock entirely. `IVaultWriteLocker` is the only correct pattern.
+
+**Cache invalidation must happen AFTER the lock is released** — never inside the `try...finally`
+block. Holding the lock during cache I/O unnecessarily extends lock duration.
 
 ### 6. Log all vault writes
 Every write to the vault must be logged:
@@ -72,6 +89,7 @@ _logger.LogInformation("Vault write: {Operation} on {Filename} at {Timestamp}", 
 
 ## Test requirements for vault write tasks
 Any test involving vault writes must:
-- Use a temporary test directory, never the real vault
-- Clean up the test directory after each test
+- Use a temporary test directory created in the test constructor — never the real vault
+- Clean up the temp directory in `Dispose()`
 - Assert both the written content AND that no other files were modified
+- Never depend on pre-existing files or folders on the developer's machine

@@ -30,16 +30,42 @@ Gemini 3.1 Pro (via API) — for analysis, echo generation, re-analysis
 
 ## Backend Service Layer
 
-### IVaultCacheService
-The vault is loaded into memory at startup. All reads go through the cache — never direct file reads.
+### Singleton Services
+All of the following are registered as singletons in `Program.cs`. Inject them — never instantiate.
 
+| Interface | Purpose |
+|---|---|
+| `IVaultCacheService` | In-memory note cache. All reads go through here — never direct file reads. |
+| `IVaultWriteLocker` | Application-wide async write lock. All vault writes must acquire this before writing. |
+| `IVaultPathProvider` | Resolves vault path once at startup. Inject instead of reading `IConfiguration` for the path. |
+| `IGeminiService` | All Gemini API calls. Never call Gemini directly from a controller. |
+
+### IVaultCacheService
 ```csharp
 IVaultCacheService.GetAllNotes()           // O(n), no disk I/O
 IVaultCacheService.GetCompletedNotes()     // pre-filtered list
 IVaultCacheService.GetNoteByFilename(fn)   // O(1) dictionary lookup
 ```
 
-**CRITICAL:** Never add direct file I/O in a controller. Route through `IVaultCacheService`.
+**CRITICAL:** Never add direct file I/O in a controller. Route reads through `IVaultCacheService`.
+
+### IVaultWriteLocker
+Serialises all vault file writes across the entire application. Prevents concurrent write corruption when multiple controllers write simultaneously.
+
+```csharp
+await _writeLocker.WaitAsync();
+try { /* write */ }
+finally { _writeLocker.Release(); }
+// cache invalidation after finally — never inside lock
+```
+
+### IVaultPathProvider
+Eliminates duplicated vault path resolution across controllers. One source of truth, resolved at startup.
+
+```csharp
+// In constructor
+_vaultPath = _vaultPathProvider.GetVaultPath();
+```
 
 ### Controller responsibilities
 - HTTP boundary only: deserialise request, call service, serialise response
@@ -49,7 +75,7 @@ IVaultCacheService.GetNoteByFilename(fn)   // O(1) dictionary lookup
 ### Service responsibilities
 - All business logic
 - Vault interaction via `IVaultCacheService`
-- Gemini API calls via `GeminiService`
+- Gemini API calls via `IGeminiService`
 
 ---
 
@@ -99,4 +125,3 @@ Never call `fetch` directly from a component — always through the service laye
 
 - `places[].address` not indexed for search — retrieval layer gap
 - Alias expansion not implemented (JB → Johor Bahru etc.)
-- `TimelineTableToggle.tsx` exists but is untracked — full spec in vault
