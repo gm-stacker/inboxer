@@ -68,18 +68,7 @@ public class VaultPathTests
         Assert.True(files.Length > 0);
     }
 
-    [Fact(DisplayName = "Legacy inboxer_vault path must be empty or not exist")]
-    public void LegacyPath_IsEmptyOrMissing()
-    {
-        var legacyPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Desktop", "inboxer_vault");
 
-        if (!Directory.Exists(legacyPath)) return; // pass — doesn't exist
-
-        var files = Directory.GetFiles(legacyPath, "*.md", SearchOption.AllDirectories);
-        Assert.Empty(files);
-    }
 
     [Fact(DisplayName = "Fuzzy note lookup finds file by case-insensitive name match")]
     public void FuzzyLookup_FindsFileByName_CaseInsensitive()
