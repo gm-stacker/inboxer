@@ -10,7 +10,7 @@
 **Inboxer** — AI-powered PKM note capture and querying app.
 - Backend: C# .NET 10 — `/Users/brucechoi/Desktop/inboxer/Backend/`
 - Frontend: React + Vite + TypeScript — `/Users/brucechoi/Desktop/inboxer/frontend/`
-- AI: Gemini 3.1 Pro (High thinking) via Antigravity
+- AI: Gemini 3.1 Pro via Antigravity
 - Data: Local Obsidian vault (`.md` files with YAML frontmatter)
 - Frontend: `http://127.0.0.1:5173` (NEVER `localhost:5173`)
 - Backend: `http://127.0.0.1:6130`
@@ -103,6 +103,26 @@ For any task involving test files:
 - Test infrastructure files
 If ANY existing component file appears (App.tsx, Editor.tsx, Sidebar.tsx, App.css, etc.) = automatic FAIL.
 
+### Rule T4 — Tests own their own environment
+Every test that touches the filesystem must create and destroy its own temporary directory.
+```csharp
+// Constructor
+_vaultRoot = Path.Combine(Path.GetTempPath(), $"inboxer_test_{Guid.NewGuid():N}");
+Directory.CreateDirectory(_vaultRoot);
+
+// Dispose
+Directory.Delete(_vaultRoot, recursive: true);
+```
+A test that passes only because of a specific pre-existing machine state is not a valid test.
+Never rely on real vault paths, specific desktop folders, or manually-created fixtures.
+
+### Rule T5 — Never delete or weaken tests to make the suite pass
+If a test fails after your change:
+- If your change broke the behaviour the test asserts: fix the code, not the test
+- If your change altered the method signature: update mock props/constructor args only
+- Never change `Assert.Equal(expected, actual)` to `Assert.NotNull(result)` to pass
+- Never skip or delete a failing test — escalate to Team Lead if genuinely unresolvable
+
 ---
 
 ## ⛔ CSS RULES — ABSOLUTE.
@@ -177,12 +197,20 @@ Every rule above exists to counter a documented failure pattern.
 | Thin Verification | "Refresh browser" as acceptance criterion | Workflow rules |
 | Deferred Ambiguity | Assumes instead of asking, proceeds with wrong interpretation | Workflow rules |
 | High Thinking Overuse | Uses High for simple tasks, wasting tokens/time | Use Medium by default |
+| Skipping Test Writing | Ships new public methods without writing corresponding tests | T4, T5 |
+| Fragile Test Preconditions | Test passes only due to specific machine state, not self-contained setup | T4 |
+| Weakening Tests to Pass | Changes Assert.Equal to Assert.NotNull to silence a failure | T5 |
+| Constructor Param Loss | Drops existing constructor params when adding new ones during refactor | Workflow rules |
+| Injecting Unused Dependencies | Adds a dependency to a class that never uses it | Workflow rules |
+| Cache Invalidation Inside Lock | Calls _cacheService.Remove() inside try...finally lock block | Workflow rules |
 
 ---
 
 ## Thinking Level Policy
 
-- **Medium**: Default for all tasks. Sufficient for standard frontend/backend changes.
-- **High**: Only for: architectural decisions, complex cross-file refactors, AI prompt changes.
+- **Medium**: Default for ALL tasks. Sufficient for standard frontend/backend changes, refactors, test writing, and CSS changes.
+- **High**: Only for: architectural decisions, complex cross-file refactors where multiple interacting systems change simultaneously, AI prompt redesign.
 - **Low**: Only for: simple file reads, grep checks, trivial one-line fixes.
-Do not use High thinking for CSS changes, test writing, or any task where the spec is fully defined.
+
+Do not use High thinking for CSS changes, test writing, DI refactors, or any task where the spec is fully defined.
+When in doubt, use Medium — you can always escalate mid-task if genuine complexity emerges.
