@@ -23,6 +23,48 @@ Repository  → Data access via IVaultCacheService
 **Never put business logic in a controller.**
 **Never access `IVaultCacheService` directly from a controller.**
 
+### Approved exception — cache invalidation in write controllers
+`TaxonomyController` and `CaptureController` are approved to call `IVaultCacheService.Remove()`
+and `RemoveByPrefix()` directly after file writes, as an intentional architectural shortcut for
+the POC. This is a known bypass of the layer rule. When CodeCop flags R2 for these specific
+controllers on these specific calls, the resolution is: *"Team Lead approved — cache invalidation
+bypass per backend-polish spec."* Do not introduce this pattern in any other controller.
+
+---
+
+## Singleton Services
+
+The following singletons are registered in `Program.cs` and must be injected — never instantiated directly:
+
+| Interface | Implementation | Purpose |
+|---|---|---|
+| `IVaultWriteLocker` | `VaultWriteLocker` | Application-wide write lock — serialises all vault file writes |
+| `IVaultPathProvider` | `VaultPathProvider` | Resolves vault path once at startup — inject instead of `IConfiguration` path retrieval |
+| `IVaultCacheService` | `VaultCacheService` | In-memory note cache |
+| `IGeminiService` | `GeminiService` | Gemini API calls |
+
+**Lock usage pattern:**
+```csharp
+await _writeLocker.WaitAsync();
+try
+{
+    // vault write here
+}
+finally
+{
+    _writeLocker.Release();
+}
+// cache invalidation AFTER finally — never inside the lock
+_cacheService.RemoveByPrefix("taxonomy_list");
+_cacheService.Remove($"category_notes:{category}");
+```
+
+**Path provider usage:**
+```csharp
+// In constructor — replace any IConfiguration vault path retrieval with:
+_vaultPath = vaultPathProvider.GetVaultPath();
+```
+
 ---
 
 ## Controller Pattern
@@ -119,3 +161,40 @@ return StatusCode(500, new { error = "message", code = "CODE_STRING" });
 - DTOs: `[Entity]Request.cs`, `[Entity]Response.cs`
 - Async methods: `[Name]Async()`
 - No abbreviations in public APIs — `GetNoteByFilename` not `GetNoteFN`
+
+---
+
+## Test Conventions (C# xUnit)
+
+Every new controller must have a corresponding `Backend.Tests/[Name]ControllerTests.cs`.
+
+**Standard test class structure:**
+```csharp
+public sealed class [Name]ControllerTests : IDisposable
+{
+    private readonly string _vaultRoot;
+
+    public [Name]ControllerTests()
+    {
+        _vaultRoot = Path.Combine(Path.GetTempPath(), $"inboxer_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_vaultRoot);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_vaultRoot))
+            Directory.Delete(_vaultRoot, recursive: true);
+    }
+
+    private [Name]Controller BuildController(MockGeminiService gemini) =>
+        new(gemini, new MockVaultPathProvider(_vaultRoot));
+}
+```
+
+**Coverage requirements per controller action:**
+- Happy path → returns expected shape with correct data
+- Invalid input → returns `BadRequestObjectResult` (400)
+- Service/Gemini throws → returns `ObjectResult` with `StatusCode` 500
+
+**Never use the real vault path in tests.** Always use `_vaultRoot` (temp directory).
+**Never rely on pre-existing files or folders on disk.** Tests create everything they need.
