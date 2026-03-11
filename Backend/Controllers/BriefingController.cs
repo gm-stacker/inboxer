@@ -18,10 +18,10 @@ namespace Backend.Controllers
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
 
-        public BriefingController(IGeminiService gemini, IConfiguration config)
+        public BriefingController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider)
         {
             _gemini = gemini;
-            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
+            _vaultPath = pathProvider.GetVaultPath();
         }
 
         [HttpGet]

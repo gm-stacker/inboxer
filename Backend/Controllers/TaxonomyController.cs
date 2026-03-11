@@ -17,13 +17,15 @@ namespace Backend.Controllers
         private readonly string _vaultPath;
         private readonly ILogger<TaxonomyController> _logger;
         private readonly IVaultCacheService _cacheService;
-        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
+        private readonly IVaultWriteLocker _writeLocker;
 
-        public TaxonomyController(ILogger<TaxonomyController> logger, IVaultCacheService cacheService)
+        public TaxonomyController(ILogger<TaxonomyController> logger, IVaultCacheService cacheService, IVaultPathProvider pathProvider, IVaultWriteLocker writeLocker)
         {
             _logger = logger;
             _cacheService = cacheService;
-            _vaultPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
+            _vaultPath = pathProvider.GetVaultPath();
+            _writeLocker = writeLocker;
+            
             if (!Directory.Exists(_vaultPath))
             {
                 Directory.CreateDirectory(_vaultPath);
@@ -31,11 +33,13 @@ namespace Backend.Controllers
         }
 
         // For unit testing isolated vaults
-        protected TaxonomyController(string vaultPath, ILogger<TaxonomyController> logger = null, IVaultCacheService cacheService = null)
+        protected TaxonomyController(string vaultPath, ILogger<TaxonomyController> logger = null, IVaultCacheService cacheService = null, IVaultWriteLocker writeLocker = null)
         {
             _logger = logger;
             _cacheService = cacheService;
             _vaultPath = vaultPath;
+            _writeLocker = writeLocker;
+            
             if (!Directory.Exists(_vaultPath))
             {
                 Directory.CreateDirectory(_vaultPath);
@@ -202,7 +206,7 @@ namespace Backend.Controllers
             var filePath = Path.Combine(_vaultPath, category, filename);
             if (!System.IO.File.Exists(filePath)) return NotFound("Note not found.");
 
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
@@ -222,7 +226,7 @@ namespace Backend.Controllers
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
 
             // Dual Invalidation
@@ -246,7 +250,7 @@ namespace Backend.Controllers
 
             var archivePath = Path.Combine(archiveDir, filename);
 
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 System.IO.File.Move(filePath, archivePath, overwrite: true);
@@ -258,7 +262,7 @@ namespace Backend.Controllers
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
 
             // Dual Invalidation
@@ -300,7 +304,7 @@ namespace Backend.Controllers
 
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = AddDoneToFrontmatter(content);
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
@@ -320,7 +324,7 @@ namespace Backend.Controllers
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
 
             // Dual Invalidation
@@ -404,7 +408,7 @@ namespace Backend.Controllers
 
             var content = await System.IO.File.ReadAllTextAsync(filePath);
             var updatedContent = RemoveDoneFromFrontmatter(content);
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 var tempPath = Path.Combine(_vaultPath, category, $"{filename}.tmp");
@@ -424,7 +428,7 @@ namespace Backend.Controllers
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
 
             // Dual Invalidation

@@ -32,7 +32,14 @@ public sealed class BriefingControllerTests : IDisposable
             .Build();
 
     private BriefingController BuildController(MockGeminiService gemini) =>
-        new(gemini, MakeConfig());
+        new(gemini, MakeConfig(), new MockVaultPathProvider(_vaultRoot));
+
+    private class MockVaultPathProvider : Backend.Services.IVaultPathProvider
+    {
+        private readonly string _path;
+        public MockVaultPathProvider(string path) => _path = path;
+        public string GetVaultPath() => _path;
+    }
 
     [Fact(DisplayName = "GetBriefing returns structured response when Gemini succeeds")]
     public async Task GetBriefing_ReturnsStructuredResponse()

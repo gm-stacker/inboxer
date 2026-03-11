@@ -23,29 +23,25 @@ namespace Backend.Services
         private readonly IGeminiService _geminiService;
         private readonly IVaultCacheService _cacheService;
         private readonly IPlacesEnrichmentService _placesEnrichmentService;
+        private readonly IVaultPathProvider _pathProvider;
+        private readonly IVaultWriteLocker _writeLocker;
         private FileSystemWatcher? _watcher;
         private string _vaultPath;
-        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
         
         // Debounce dictionary: file path -> debounce timer CTS
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _debounceTimers = new();
 
-        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IGeminiService geminiService, IVaultCacheService cacheService, IPlacesEnrichmentService placesEnrichmentService)
+        public VaultWatcherService(ILogger<VaultWatcherService> logger, IConfiguration config, IGeminiService geminiService, IVaultCacheService cacheService, IPlacesEnrichmentService placesEnrichmentService, IVaultPathProvider pathProvider, IVaultWriteLocker writeLocker)
         {
             _logger = logger;
             _config = config;
             _geminiService = geminiService;
             _cacheService = cacheService;
             _placesEnrichmentService = placesEnrichmentService;
+            _pathProvider = pathProvider;
+            _writeLocker = writeLocker;
             
-            _vaultPath = _config["VAULT_PATH"];
-            
-            if (string.IsNullOrEmpty(_vaultPath))
-            {
-                // Falling back to Desktop for local dev convenience, but logging a warning
-                _vaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
-                _logger.LogWarning($"VAULT_PATH env var not set. Falling back to local Desktop path: {_vaultPath}");
-            }
+            _vaultPath = _pathProvider.GetVaultPath();
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -55,7 +51,7 @@ namespace Backend.Services
             // Loop to handle config updates for the vault path
             while (!stoppingToken.IsCancellationRequested)
             {
-                var currentConfigPath = _config["VAULT_PATH"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+                var currentConfigPath = _pathProvider.GetVaultPath();
                 if (currentConfigPath != _vaultPath)
                 {
                     _logger.LogInformation($"Vault path changed from {_vaultPath} to {currentConfigPath}. Restarting watcher.");
@@ -277,7 +273,7 @@ namespace Backend.Services
                 var finalFileContent = $"---\n{newYamlRaw.TrimEnd()}\n---\n{body}";
 
                 // Write back atomically
-                await _writeLock.WaitAsync();
+                await _writeLocker.WaitAsync();
                 try
                 {
                     var tempPath = filePath + ".tmp";
@@ -307,7 +303,7 @@ namespace Backend.Services
                 }
                 finally
                 {
-                    _writeLock.Release();
+                    _writeLocker.Release();
                 }
 
             }

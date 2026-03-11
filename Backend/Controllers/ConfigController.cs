@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Backend.Services;
 
 namespace Backend.Controllers
 {
@@ -11,17 +12,19 @@ namespace Backend.Controllers
     public class ConfigController : ControllerBase
     {
         private readonly IConfiguration _config;
+        private readonly IVaultPathProvider _pathProvider;
         private readonly string _appSettingsPath = "appsettings.json";
 
-        public ConfigController(IConfiguration config)
+        public ConfigController(IConfiguration config, IVaultPathProvider pathProvider)
         {
             _config = config;
+            _pathProvider = pathProvider;
         }
 
         [HttpGet("vault")]
         public IActionResult GetVaultPath()
         {
-            var path = _config.GetValue<string>("VaultPath") ?? Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            var path = _pathProvider.GetVaultPath();
             return Ok(new { vaultPath = path });
         }
 
@@ -93,7 +96,7 @@ namespace Backend.Controllers
         [HttpDelete("vault/clear")]
         public IActionResult ClearVault()
         {
-            var path = _config.GetValue<string>("VaultPath") ?? Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault");
+            var path = _pathProvider.GetVaultPath();
             
             if (!Directory.Exists(path))
             {

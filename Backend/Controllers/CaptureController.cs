@@ -20,13 +20,23 @@ namespace Backend.Controllers
         private readonly string _vaultPath;
         private readonly IGeminiService _gemini;
         private readonly ILogger<CaptureController> _logger;
-        private static readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
+        private readonly IVaultWriteLocker _writeLocker;
+        private readonly IVaultCacheService _cacheService;
 
-        public CaptureController(IConfiguration configuration, IGeminiService gemini, ILogger<CaptureController> logger)
+        public CaptureController(
+            IConfiguration configuration, 
+            IGeminiService gemini, 
+            ILogger<CaptureController> logger,
+            IVaultPathProvider pathProvider,
+            IVaultWriteLocker writeLocker,
+            IVaultCacheService cacheService)
         {
             _gemini = gemini;
             _logger = logger;
-            _vaultPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
+            _vaultPath = pathProvider.GetVaultPath();
+            _writeLocker = writeLocker;
+            _cacheService = cacheService;
+
             if (!Directory.Exists(_vaultPath))
                 Directory.CreateDirectory(_vaultPath);
         }
@@ -143,7 +153,7 @@ raw_text: {request.RawText}";
                                 {
                                     var newContent = existingContent.Replace(update.ExactSearch, update.ReplaceWith);
                                     
-                                    await _writeLock.WaitAsync();
+                                    await _writeLocker.WaitAsync();
                                     try
                                     {
                                         var tempPath = updatePath + ".tmp";
@@ -159,7 +169,7 @@ raw_text: {request.RawText}";
                                     }
                                     finally
                                     {
-                                        _writeLock.Release();
+                                        _writeLocker.Release();
                                     }
                                 }
                             }
@@ -309,7 +319,7 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
                 string safeFileName = Guid.NewGuid().ToString("N").Substring(0, 6) + "_" + file.FileName.Replace(" ", "_");
                 string savedFilePath = Path.Combine(categoryPath, safeFileName);
                 
-                await _writeLock.WaitAsync();
+                await _writeLocker.WaitAsync();
                 try
                 {
                     var tempFilePath = savedFilePath + ".tmp";
@@ -325,8 +335,11 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
                 }
                 finally
                 {
-                    _writeLock.Release();
+                    _writeLocker.Release();
                 }
+
+                _cacheService.RemoveByPrefix("taxonomy_list");
+                _cacheService.Remove($"category_notes:{routingData.TargetCategory}");
 
                 // Build note body
                 string noteBody = "";
@@ -520,7 +533,7 @@ Conversation History:
                                      "tags: [ai, conversation]" + Environment.NewLine +
                                      "---" + Environment.NewLine + Environment.NewLine;
 
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 var tempPath = filePath + ".tmp";
@@ -536,8 +549,11 @@ Conversation History:
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
+
+            _cacheService.RemoveByPrefix("taxonomy_list");
+            _cacheService.Remove("category_notes:Conversations");
 
             return Ok(new { message = "Conversation saved successfully.", filename });
         }
@@ -596,7 +612,7 @@ Conversation History:
                                      wineYaml +
                                      "---" + Environment.NewLine + Environment.NewLine;
 
-            await _writeLock.WaitAsync();
+            await _writeLocker.WaitAsync();
             try
             {
                 var tempPath = filePath + ".tmp";
@@ -624,8 +640,11 @@ Conversation History:
             }
             finally
             {
-                _writeLock.Release();
+                _writeLocker.Release();
             }
+
+            _cacheService.RemoveByPrefix("taxonomy_list");
+            _cacheService.Remove($"category_notes:{routingData.TargetCategory}");
         }
 
         private async Task<string> GetVaultContextAsync()

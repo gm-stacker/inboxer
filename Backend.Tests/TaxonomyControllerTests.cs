@@ -31,20 +31,33 @@ public sealed class TaxonomyControllerTests : IDisposable
     // TaxonomyController resolves vault from CWD — we hack via a subclass override instead.
     // Since the controller uses the constructor-hardcoded pattern, we'll test via the public API
     // by using a derived testable version that accepts a vault path.
+    private class MockVaultCacheService : Backend.Services.IVaultCacheService
+    {
+        public Task<T> GetOrAddAsync<T>(string cacheKey, Func<Task<T>> factory) => factory();
+        public void Remove(string cacheKey) { }
+        public void RemoveByPrefix(string prefix) { }
+    }
+
+    private class MockVaultWriteLocker : Backend.Services.IVaultWriteLocker
+    {
+        public Task WaitAsync() => Task.CompletedTask;
+        public void Release() { }
+    }
+
     private TestableTaxonomyController BuildController() =>
-        new(_vaultRoot);
+        new(_vaultRoot, null, new MockVaultCacheService(), new MockVaultWriteLocker());
 
     // ── GetTaxonomy ───────────────────────────────────────────────────────────
 
     [Fact(DisplayName = "GetTaxonomy returns categories with note counts")]
-    public void GetTaxonomy_ReturnsCategories()
+    public async Task GetTaxonomy_ReturnsCategories()
     {
         var catDir = Path.Combine(_vaultRoot, "Health");
         Directory.CreateDirectory(catDir);
         File.WriteAllText(Path.Combine(catDir, "note1.md"), "# Note 1");
         File.WriteAllText(Path.Combine(catDir, "note2.md"), "# Note 2");
 
-        var result = BuildController().GetTaxonomy() as OkObjectResult;
+        var result = await BuildController().GetTaxonomy() as OkObjectResult;
         Assert.NotNull(result);
 
         var json = System.Text.Json.JsonSerializer.Serialize(result!.Value);
@@ -53,9 +66,9 @@ public sealed class TaxonomyControllerTests : IDisposable
     }
 
     [Fact(DisplayName = "GetTaxonomy returns empty list when vault has no subdirectories")]
-    public void GetTaxonomy_ReturnsEmpty_WhenVaultEmpty()
+    public async Task GetTaxonomy_ReturnsEmpty_WhenVaultEmpty()
     {
-        var result = BuildController().GetTaxonomy() as OkObjectResult;
+        var result = await BuildController().GetTaxonomy() as OkObjectResult;
         Assert.NotNull(result);
         var json = System.Text.Json.JsonSerializer.Serialize(result!.Value);
         Assert.Equal("[]", json);
@@ -396,5 +409,6 @@ public sealed class TaxonomyControllerTests : IDisposable
 /// </summary>
 internal sealed class TestableTaxonomyController : TaxonomyController
 {
-    public TestableTaxonomyController(string vaultPath) : base(vaultPath) { }
+    public TestableTaxonomyController(string vaultPath, Microsoft.Extensions.Logging.ILogger<TaxonomyController> logger = null, Backend.Services.IVaultCacheService cacheService = null, Backend.Services.IVaultWriteLocker writeLocker = null) 
+        : base(vaultPath, logger, cacheService, writeLocker) { }
 }

@@ -17,10 +17,10 @@ namespace Backend.Controllers
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
 
-        public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config)
+        public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config, IVaultPathProvider pathProvider)
         {
             _gemini = gemini;
-            _vaultPath = config.GetValue<string>("VaultPath") ?? Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "vault"));
+            _vaultPath = pathProvider.GetVaultPath();
         }
 
         [HttpPost]

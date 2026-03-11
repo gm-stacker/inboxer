@@ -33,7 +33,14 @@ public sealed class ChatControllerTests : IDisposable
             .Build();
 
     private ChatController BuildController(MockGeminiService gemini) =>
-        new(gemini, MakeConfig());
+        new(gemini, MakeConfig(), new MockVaultPathProvider(_vaultRoot));
+
+    private class MockVaultPathProvider : Backend.Services.IVaultPathProvider
+    {
+        private readonly string _path;
+        public MockVaultPathProvider(string path) => _path = path;
+        public string GetVaultPath() => _path;
+    }
 
     private static ChatRequest Req(string message) =>
         new() { Message = message, ConversationHistory = new List<ChatTurn>() };

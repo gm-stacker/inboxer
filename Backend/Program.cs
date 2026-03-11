@@ -9,6 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<Backend.Services.IVaultWriteLocker, Backend.Services.VaultWriteLocker>();
+builder.Services.AddSingleton<Backend.Services.IVaultPathProvider, Backend.Services.VaultPathProvider>();
 builder.Services.AddSingleton<Backend.Services.IGeminiService, Backend.Services.GeminiService>();
 builder.Services.AddSingleton<Backend.Services.IVaultCacheService, Backend.Services.VaultCacheService>();
 builder.Services.AddSingleton<Backend.Services.IPlacesEnrichmentService, Backend.Services.PlacesEnrichmentService>();

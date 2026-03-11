@@ -32,7 +32,14 @@ public sealed class InsightsControllerTests : IDisposable
             .Build();
 
     private InsightsController BuildController(MockGeminiService gemini) =>
-        new(gemini, MakeConfig());
+        new(gemini, MakeConfig(), new MockVaultPathProvider(_vaultRoot));
+
+    private class MockVaultPathProvider : Backend.Services.IVaultPathProvider
+    {
+        private readonly string _path;
+        public MockVaultPathProvider(string path) => _path = path;
+        public string GetVaultPath() => _path;
+    }
 
     [Fact(DisplayName = "GenerateEchoes returns 400 when content is empty")]
     public async Task GenerateEchoes_Returns400_WhenContentEmpty()
