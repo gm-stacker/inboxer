@@ -29,7 +29,7 @@ public sealed class ConfigControllerTests
     [Fact(DisplayName = "GetVaultPath returns the path specified in config")]
     public void GetVaultPath_ReturnsConfiguredPath()
     {
-        var ctrl = new ConfigController(MakeConfig("/some/custom/vault"), new MockVaultPathProvider("/some/custom/vault"));
+        var ctrl = new ConfigController(MakeConfig("/some/custom/vault"), new MockVaultPathProvider("/some/custom/vault"), null);
         var result = ctrl.GetVaultPath() as OkObjectResult;
 
         Assert.NotNull(result);
@@ -40,7 +40,7 @@ public sealed class ConfigControllerTests
     [Fact(DisplayName = "GetVaultPath returns fallback path when VaultPath key is absent")]
     public void GetVaultPath_ReturnsFallback_WhenNotConfigured()
     {
-        var ctrl = new ConfigController(MakeConfig(null), new MockVaultPathProvider(Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault")));
+        var ctrl = new ConfigController(MakeConfig(null), new MockVaultPathProvider(Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Desktop", "inboxer_vault")), null);
         var result = ctrl.GetVaultPath() as OkObjectResult;
 
         Assert.NotNull(result);
@@ -52,7 +52,7 @@ public sealed class ConfigControllerTests
     [Fact(DisplayName = "SetVaultPath returns 400 when path is empty string")]
     public async System.Threading.Tasks.Task SetVaultPath_Returns400_WhenPathEmpty()
     {
-        var ctrl = new ConfigController(MakeConfig("/vault"), new MockVaultPathProvider("/vault"));
+        var ctrl = new ConfigController(MakeConfig("/vault"), new MockVaultPathProvider("/vault"), null);
         var result = await ctrl.SetVaultPath(new VaultPathRequest { VaultPath = "" });
         Assert.IsType<BadRequestObjectResult>(result);
     }
@@ -60,7 +60,7 @@ public sealed class ConfigControllerTests
     [Fact(DisplayName = "ClearVault returns 404 when vault directory does not exist")]
     public void ClearVault_Returns404_WhenVaultMissing()
     {
-        var ctrl = new ConfigController(MakeConfig("/nonexistent/path/to/vault_xyz_12345"), new MockVaultPathProvider("/nonexistent/path/to/vault_xyz_12345"));
+        var ctrl = new ConfigController(MakeConfig("/nonexistent/path/to/vault_xyz_12345"), new MockVaultPathProvider("/nonexistent/path/to/vault_xyz_12345"), null);
         var result = ctrl.ClearVault();
         Assert.IsType<NotFoundObjectResult>(result);
     }

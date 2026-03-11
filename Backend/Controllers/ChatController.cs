@@ -9,6 +9,7 @@ using System.Text;
 using System;
 using System.Linq;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -18,11 +19,13 @@ namespace Backend.Controllers
     {
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
+        private readonly ILogger<ChatController> _logger;
 
-        public ChatController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider)
+        public ChatController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider, ILogger<ChatController> logger = null)
         {
             _gemini = gemini;
             _vaultPath = pathProvider.GetVaultPath();
+            _logger = logger;
         }
 
         [HttpPost]
@@ -135,7 +138,8 @@ Oh, have a great time in Tokyo! I remember you mentioning you were really lookin
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error executing conversational chat: {ex.Message}");
+                _logger.LogError(ex, "Error executing conversational chat");
+                return StatusCode(500, new { error = "Error executing conversational chat", code = "INTERNAL_ERROR" });
             }
         }
 

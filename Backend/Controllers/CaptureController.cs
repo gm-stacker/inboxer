@@ -190,7 +190,8 @@ raw_text: {request.RawText}";
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error during capture: {ex.Message}");
+                _logger.LogError(ex, "Error during capture");
+                return StatusCode(500, new { error = "Error during capture", code = "INTERNAL_ERROR" });
             }
         }
 
@@ -338,6 +339,7 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
                     _writeLocker.Release();
                 }
 
+                // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
                 _cacheService.RemoveByPrefix("taxonomy_list");
                 _cacheService.Remove($"category_notes:{routingData.TargetCategory}");
 
@@ -364,7 +366,8 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error during file upload: {ex.Message}");
+                _logger.LogError(ex, "Error during file upload");
+                return StatusCode(500, new { error = "Error during file upload", code = "INTERNAL_ERROR" });
             }
         }
 
@@ -430,7 +433,8 @@ User Description (HIGH PRIORITY GROUND TRUTH): {(string.IsNullOrWhiteSpace(descr
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                _logger.LogError(ex, "Error fetching media");
+                return StatusCode(500, new { error = "Error fetching media", code = "INTERNAL_ERROR" });
             }
         }
 
@@ -509,7 +513,8 @@ Conversation History:
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Failed to parse structured JSON: {ex.Message}");
+                _logger.LogError(ex, "Failed to parse structured JSON");
+                return StatusCode(500, new { error = "Failed to parse structured JSON", code = "INTERNAL_ERROR" });
             }
         }
 
@@ -552,6 +557,7 @@ Conversation History:
                 _writeLocker.Release();
             }
 
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.RemoveByPrefix("taxonomy_list");
             _cacheService.Remove("category_notes:Conversations");
 
@@ -643,6 +649,7 @@ Conversation History:
                 _writeLocker.Release();
             }
 
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.RemoveByPrefix("taxonomy_list");
             _cacheService.Remove($"category_notes:{routingData.TargetCategory}");
         }

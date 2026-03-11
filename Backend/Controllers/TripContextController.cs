@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using System;
 using System.Linq;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -17,11 +18,13 @@ namespace Backend.Controllers
     {
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
+        private readonly ILogger<TripContextController> _logger;
 
-        public TripContextController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider)
+        public TripContextController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider, ILogger<TripContextController> logger = null)
         {
             _gemini = gemini;
             _vaultPath = pathProvider.GetVaultPath();
+            _logger = logger;
         }
 
         [HttpPost]
@@ -88,7 +91,8 @@ Sections explanation:
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error executing trip context: {ex.Message}");
+                _logger.LogError(ex, "Error executing trip context");
+                return StatusCode(500, new { error = "Error executing trip context", code = "INTERNAL_ERROR" });
             }
         }
 

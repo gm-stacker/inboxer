@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -15,11 +16,13 @@ namespace Backend.Controllers
     {
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
+        private readonly ILogger<InsightsController> _logger;
 
-        public InsightsController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider)
+        public InsightsController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider, ILogger<InsightsController> logger = null)
         {
             _gemini = gemini;
             _vaultPath = pathProvider.GetVaultPath();
+            _logger = logger;
         }
 
         [HttpPost("echoes")]
@@ -58,7 +61,8 @@ target_note:
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error generating echoes: {ex.Message}");
+                _logger.LogError(ex, "Error generating echoes");
+                return StatusCode(500, new { error = "Error generating echoes", code = "INTERNAL_ERROR" });
             }
         }
 

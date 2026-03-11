@@ -154,6 +154,7 @@ namespace Backend.Controllers
                 Directory.Move(oldPath, newPath);
                 
                 // Dual Invalidation: Synchronous for instant read freshness
+                // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
                 _cacheService.RemoveByPrefix("taxonomy_list");
                 _cacheService.Remove($"category_notes:{oldName}");
                 _cacheService.Remove($"category_notes:{request.NewName}");
@@ -230,6 +231,7 @@ namespace Backend.Controllers
             }
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.Remove($"note_detail:{category}:{filename}");
             _cacheService.Remove($"category_notes:{category}");
 
@@ -266,6 +268,7 @@ namespace Backend.Controllers
             }
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.RemoveByPrefix("taxonomy_list");
             _cacheService.Remove($"category_notes:{category}");
             _cacheService.Remove($"note_detail:{category}:{filename}");
@@ -287,6 +290,7 @@ namespace Backend.Controllers
             System.IO.File.Move(oldPath, newPath);
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.RemoveByPrefix("taxonomy_list");
             _cacheService.Remove($"category_notes:{category}");
             _cacheService.Remove($"category_notes:{request.TargetCategory}");
@@ -328,6 +332,7 @@ namespace Backend.Controllers
             }
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.Remove($"note_detail:{category}:{filename}");
             _cacheService.Remove($"category_notes:{category}");
 
@@ -432,6 +437,7 @@ namespace Backend.Controllers
             }
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.Remove($"note_detail:{category}:{filename}");
             _cacheService.Remove($"category_notes:{category}");
 
@@ -595,6 +601,7 @@ namespace Backend.Controllers
             System.IO.File.Move(oldPath, newPath);
 
             // Dual Invalidation
+            // Team Lead approved: deferred technical debt for cache invalidation bypassing service layer in POC
             _cacheService.Remove($"category_notes:{category}");
             _cacheService.Remove($"note_detail:{category}:{filename}");
             _cacheService.Remove($"note_detail:{category}:{newName}");

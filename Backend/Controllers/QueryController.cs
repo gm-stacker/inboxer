@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -16,11 +17,13 @@ namespace Backend.Controllers
     {
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
+        private readonly ILogger<QueryController> _logger;
 
-        public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config, IVaultPathProvider pathProvider)
+        public QueryController(IGeminiService gemini, Microsoft.Extensions.Configuration.IConfiguration config, IVaultPathProvider pathProvider, ILogger<QueryController> logger = null)
         {
             _gemini = gemini;
             _vaultPath = pathProvider.GetVaultPath();
+            _logger = logger;
         }
 
         [HttpPost]
@@ -152,7 +155,8 @@ User Query:
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error executing query: {ex.Message}");
+                _logger.LogError(ex, "Error executing query");
+                return StatusCode(500, new { error = "Error executing query", code = "INTERNAL_ERROR" });
             }
         }
 

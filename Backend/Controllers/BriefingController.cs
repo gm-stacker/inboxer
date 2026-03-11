@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using System;
 using System.Linq;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -17,11 +18,13 @@ namespace Backend.Controllers
     {
         private readonly IGeminiService _gemini;
         private readonly string _vaultPath;
+        private readonly ILogger<BriefingController> _logger;
 
-        public BriefingController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider)
+        public BriefingController(IGeminiService gemini, IConfiguration config, IVaultPathProvider pathProvider, ILogger<BriefingController> logger = null)
         {
             _gemini = gemini;
             _vaultPath = pathProvider.GetVaultPath();
+            _logger = logger;
         }
 
         [HttpGet]
@@ -79,7 +82,8 @@ User's Notes from the Past 14 Days & Open Tasks:
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error executing briefing: {ex.Message}");
+                _logger.LogError(ex, "Error executing briefing");
+                return StatusCode(500, new { error = "Error executing briefing", code = "INTERNAL_ERROR" });
             }
         }
 

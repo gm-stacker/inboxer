@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Backend.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.Controllers
 {
@@ -13,12 +14,14 @@ namespace Backend.Controllers
     {
         private readonly IConfiguration _config;
         private readonly IVaultPathProvider _pathProvider;
+        private readonly ILogger<ConfigController> _logger;
         private readonly string _appSettingsPath = "appsettings.json";
 
-        public ConfigController(IConfiguration config, IVaultPathProvider pathProvider)
+        public ConfigController(IConfiguration config, IVaultPathProvider pathProvider, ILogger<ConfigController> logger = null)
         {
             _config = config;
             _pathProvider = pathProvider;
+            _logger = logger;
         }
 
         [HttpGet("vault")]
@@ -89,7 +92,8 @@ namespace Backend.Controllers
             }
             catch (System.Exception ex)
             {
-                return StatusCode(500, $"Failed to save config: {ex.Message}");
+                _logger?.LogError(ex, "Failed to save config");
+                return StatusCode(500, new { error = "Failed to save config", code = "INTERNAL_ERROR" });
             }
         }
 
@@ -120,7 +124,8 @@ namespace Backend.Controllers
             }
             catch (System.Exception ex)
             {
-                return StatusCode(500, $"Failed to clear vault: {ex.Message}");
+                _logger?.LogError(ex, "Failed to clear vault");
+                return StatusCode(500, new { error = "Failed to clear vault", code = "INTERNAL_ERROR" });
             }
         }
     }
