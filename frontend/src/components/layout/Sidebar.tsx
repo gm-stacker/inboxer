@@ -138,6 +138,7 @@ export function Sidebar({
                     ) : (
                         /* ── Normal Taxonomy Mode ────────────────────────────── */
                         taxonomies
+                            .filter(cat => cat.noteCount > 0)
                             .map((cat) => (
                                 <div key={cat.name} className="taxonomy-item-wrapper">
                                     <div
