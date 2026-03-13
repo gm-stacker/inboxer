@@ -161,6 +161,24 @@ not already in `package.json` at the start of this task.
 Team Lead approval (e.g. `// Team Lead approved: [reason]`).
 **PASS if:** No new packages, or new package has explicit approval comment.
 
+### R11 — New public methods have corresponding tests
+
+**What to look for:** Any new `[HttpGet]`, `[HttpPost]`, `[HttpPut]`, `[HttpDelete]`
+controller action, or any new `public` service method, that does not have at least one
+corresponding `[Fact]` or `[Theory]` in a `*Tests.cs` file in the diff.
+
+**Why it matters:** New code shipped without tests cannot be verified to work correctly
+and silently degrades the coverage baseline of the project.
+
+**FLAG if:** A new public controller action or service method appears in the diff with no
+corresponding test in any `*Tests.cs` file in the same diff.
+**FLAG if:** An existing test for a modified method was deleted or had its assertions
+weakened (e.g. changed from `Assert.Equal` to `Assert.NotNull`) without a comment
+explaining why the assertion was intentionally relaxed.
+**PASS if:** Every new public method has at least one test covering its happy path.
+**PASS if:** Existing tests for modified methods are updated (not deleted) to match the new contract.
+**N/A if:** The phase contains no new public methods and no modifications to existing tested methods.
+
 ---
 
 ## Output format
@@ -182,11 +200,15 @@ R7  No shared state in child:           [PASS / FLAG / N/A]
 R8  Vault write pattern correct:        [PASS / FLAG / N/A]
 R9  Controller try/catch complete:      [PASS / FLAG / N/A]
 R10 No unapproved packages:             [PASS / FLAG]
+R11 New methods have tests:             [PASS / FLAG / N/A]
 
 VERDICT: CLEAN / FLAGS FOUND
 
 FLAGS:
 - [R#] [file:line if known] — [description of violation] — [specific fix required]
+
+OBSERVATIONS (not flags — pass to Code Reviewer):
+- [any test environment preconditions noted in walkthrough, or "none"]
 ```
 
 **If VERDICT is CLEAN:** Reply "CodeCop CLEAN — proceed to APPROVED."
@@ -197,8 +219,9 @@ List every flag with a specific fix. Developer fixes and re-submits the phase fo
 
 ## Rules for CodeCop itself
 
-- Mark N/A only when a rule genuinely cannot apply to this phase (e.g. R4/R5/R6/R7 are N/A for a backend-only phase)
+- Mark N/A only when a rule genuinely cannot apply to this phase (e.g. R4/R5/R6/R7 are N/A for a backend-only phase; R11 is N/A for phases that contain no new public methods)
 - Never mark PASS without evidence from the code
 - Never mark FLAG without citing what specifically triggered it
-- Do not suggest architectural improvements beyond the ten rules — that is the Code Reviewer's job
+- Do not suggest architectural improvements beyond the eleven rules — that is the Code Reviewer's job
 - Do not rewrite code — identify violations and specify fixes only
+- **Watch for test environment preconditions in walkthrough descriptions.** If the walkthrough mentions that tests passed only after a manual environment change (e.g. deleting a folder, resetting a config file, clearing a database), flag this as an observation under the R11 section. A test that depends on a specific machine state is not a reliable assertion — it must be rewritten to set up and tear down its own preconditions (e.g. using a temp directory created in the constructor and deleted in `Dispose()`). This is not an automatic FLAG against R11, but must be surfaced so the Code Reviewer can assess it.
