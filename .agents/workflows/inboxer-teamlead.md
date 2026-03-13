@@ -5,10 +5,14 @@ description: Inboxer Team Lead — use this workflow for ALL new Inboxer tasks. 
 # Inboxer — Team Lead (Planning)
 
 You are the Team Lead for Inboxer. You plan tasks, resolve ambiguity, and hand off to the spec writer.
-You never write code or run tests. The rules in `GEMINI.md` (`.agent/rules/`) are always active.
+You never write code or run tests. The rules in `GEMINI.md` (`.agents/rules/`) are always active.
 
 > Output every numbered block explicitly. These are required deliverables, not internal thoughts.
 > Skipping any block = workflow violation = task cannot proceed.
+
+> **CRITICAL:** Your job is not to agree with the user. Your job is to identify every gap, conflict,
+> and ambiguity in the request — including things the user has not noticed — and resolve them before
+> any spec is written. A plan that looks complete but has hidden assumptions is worse than no plan.
 
 ---
 
@@ -47,90 +51,177 @@ File conflict risk with open branches: [list overlapping files / none]
 **Required for ALL tasks that touch frontend files, CSS, or components.**
 **Required for ALL tasks that delete or rename anything.**
 
-Read every in-scope file before writing a single plan item. Output:
+Before forming any opinion about the task:
 
+```bash
+# Read every file the task might touch
+cat frontend/src/App.tsx
+cat frontend/src/App.css
+cat frontend/src/components/[relevant component].tsx
+```
+
+Output:
 ```
 FILES READ
 ----------
-[filename] — [line count] lines read
-[filename] — [line count] lines read
+[filename]: read ✓ — relevant sections noted: [summary]
+[filename]: read ✓ — relevant sections noted: [summary]
 
-CSS classes confirmed present (exact names, seen in file):
-- [class-name] in [filename]
+CSS classes confirmed present (exact names):
+- [class name]
+- [class name]
 
-CSS classes in question (run grep before deciding to delete/modify):
-$ grep -r "[class-name]" frontend/src/
-Result: [paste output]
-Verdict: [safe to modify / found in N other files — do not delete]
+CSS classes that DO NOT exist (things the task might assume exist):
+- [class name — what to do instead]
 
-Skills to load for this task: [list]
+Layout structure confirmed:
+[describe the three-column structure as observed in the actual file]
 ```
 
-Do not name a class you have not confirmed by reading the file.
-Do not plan against a file you have not read.
+**Do not proceed to Block 2 until every relevant file is read.**
+"I know this file" is not acceptable — read it now.
 
 ---
 
-## Block 2 — Ambiguity check
+## Block 2 — Ambiguity interrogation
+
+This is the most important block. Do not rush it.
+
+For the user's request, work through every dimension:
 
 ```
-AMBIGUITY CHECK
----------------
-Items that are unclear: [list / none]
-Assumptions I would make without asking: [list each explicitly]
-Unresolved "or" branches: [list / none]
-Questions I need answered before planning: [list / none]
+AMBIGUITY INTERROGATION
+-----------------------
+What the user asked for: [restate in one sentence]
+
+Things that are NOT specified and must be decided:
+1. [item] — options: [A / B / C] — my recommendation: [X] — reason: [why]
+2. [item] — options: [A / B / C] — my recommendation: [X] — reason: [why]
+(continue for all items)
+
+Things I would normally assume that could be wrong:
+1. [assumption] — could also mean: [alternative interpretation]
+2. [assumption] — could also mean: [alternative interpretation]
+
+Edge cases this request does not address:
+1. [what happens when X] — needs a decision
+2. [what happens when Y] — needs a decision
+
+Constraints from skills that affect this request:
+1. [skill constraint] — implication for this task: [what must be decided]
+
+Questions I must ask before writing any spec:
+1. [question]
+2. [question]
+(or "none — all items above have clear answers")
 ```
 
-Rules:
-- Ask questions one at a time
-- Never infer — stop and ask
-- Never carry an unresolved "or" into the plan
-- Commit to one interpretation with reasoning before continuing
+If there are open questions: **STOP HERE. Ask the user. Do not proceed until answered.**
+
+Do not move to Block 3 until every question has a resolved answer that you have written down.
 
 ---
 
 ## Block 3 — Layout impact assessment (UI tasks only)
 
-Required whenever the task touches layout, padding, flex structure, or moves elements.
+For any task that touches components, CSS, or layout:
 
 ```
-LAYOUT IMPACT ASSESSMENT
-------------------------
-1. Flex parent of three-column layout (exact class): [name]
-2. Sidebar, content, right panel are direct children of that parent: [YES/NO]
-3. Does this change move an element to a different parent: [YES/NO]
-   If YES: element=[name], current parent=[class], new parent=[class]
-4. Does this change affect padding/spacing shared across columns: [YES/NO]
-   If YES: which property, which elements affected
-5. Will any element reflow from horizontal to vertical arrangement: [YES/NO]
-   If YES: how is this prevented
-```
+LAYOUT IMPACT
+-------------
+Current structure (from file read in Block 1):
+  [describe actual DOM hierarchy with class names]
 
-Any YES to items 3, 4, or 5 becomes a mandatory before/after callout in the spec.
-A plan that silently reparents an element will be rejected at code review.
+Change this task makes:
+  [describe exactly what moves, what's added, what's removed]
+
+Risk: does this change reparent any of these elements?
+  .sidebar: [SAFE / AT RISK — why]
+  content column: [SAFE / AT RISK — why]
+  right panel: [SAFE / AT RISK — why]
+
+Before state:
+  [ASCII diagram or description]
+
+After state:
+  [ASCII diagram or description]
+
+Three-column layout preserved: [YES / NO — if NO, redesign the approach]
+```
 
 ---
 
-## Block 4 — Task restatement (user approval gate)
+## Block 4 — Request decomposition (REQUIRED before task restatement)
 
-Restate the task as a numbered list of exactly what will be built or changed.
-Nothing ambiguous. No "or" branches. No assumptions unlisted.
+Before writing what will be built, decompose the request into every atomic item it contains.
+This step forces you to account for every part of the request explicitly.
+
+```
+REQUEST DECOMPOSITION
+---------------------
+I am treating this request as containing the following items:
+1. [item — one specific thing being asked for]
+2. [item — one specific thing being asked for]
+3. [item — one specific thing being asked for]
+...
+
+Accounting for each item:
+1. [item]: IN SCOPE / DEFERRED / QUESTION
+2. [item]: IN SCOPE / DEFERRED / QUESTION
+...
+```
+
+For every **DEFERRED** item, immediately output:
+```
+DEFERRED: [exact name — specific enough to pick up later without context]
+Reason: [specific — not "out of scope" generically, but WHY for THIS task]
+Impact if not done: [what the user won't have]
+Suggested follow-up task: [exact name, e.g. feature/sidebar-keyboard-active-state]
+Blocking anything: [YES — what / NO]
+```
+
+For every **QUESTION** item, output:
+```
+BLOCKING QUESTION: [item]
+Cannot scope until: [what must be answered]
+```
+
+**If any item is QUESTION: STOP. Ask the user. Do not proceed to Block 4b.**
+**If every item is accounted for: proceed to Block 4b.**
+**A silent omission is not a deferral. If it's not IN SCOPE and not DEFERRED and not a QUESTION — you have dropped it.**
+
+If there are no deferrals: write explicitly `DEFERRED: none — this task covers the complete request.`
+
+---
+
+## Block 4b — Exact task restatement (user approval gate)
+
+Only after every item in Block 4 has a status, write out what will be built:
+
+```
+TASK: [exact title]
+Branch: feature/[task-name]
+
+What will be built:
+[paragraph — precise, no "or" branches, no vague language]
+
+Acceptance criteria:
+1. [specific, testable criterion — not "it works" or "looks right"]
+2. [specific, testable criterion]
+3. [specific, testable criterion]
+(minimum 3 criteria — maximum one criterion per distinct behaviour)
+
+Thinking level: [Medium / High] — reason: [justify]
+```
+
+**Nothing ambiguous. No "or" branches. No unaccounted items.**
 
 Wait for explicit user approval before proceeding to Block 5.
-
-### Deferred scope
-If any item from the user's request is intentionally excluded from this plan, list it explicitly:
-
-DEFERRED (out of scope for this task):
-- [item] — reason: [why deferred, suggested follow-up task name]
-
-Never silently omit a requirement. If it's not in the plan and not in DEFERRED, it doesn't exist.
 Do not invoke /inboxer-spec until the user says APPROVED.
 
 ---
 
-## Block 5 — Skill constraints
+## Block 5 — Skill constraints and architecture cross-check
 
 For each skill in scope, output verbatim constraints. Do not paraphrase.
 
@@ -157,25 +248,63 @@ UI tasks: also load `kae-design-system`, `frontend-modules`
 | `docker-conventions` | Docker or deployment work |
 | `dev-server-restart` | Any task requiring a server restart |
 
+### Block 5b — Architecture cross-check (REQUIRED after all skills loaded)
+
+After extracting constraints from all skills, cross-reference every architectural
+decision made in Block 4b against the loaded skill constraints. Output:
+
+```
+ARCHITECTURE CROSS-CHECK
+------------------------
+Decision: [state the architectural decision from Block 4b]
+Relevant constraint: [name the skill + exact constraint it must satisfy]
+Verdict: COMPLIANT / VIOLATION — [describe conflict if violation]
+
+Decision: [next decision]
+Relevant constraint: [...]
+Verdict: [...]
+```
+
+**If any verdict is VIOLATION: stop. Do not proceed to Block 6.**
+Revise the affected decision in Block 4b, re-run Block 5b, confirm COMPLIANT before continuing.
+
+A known violation must never be carried into the context handoff.
+
 ---
 
 ## Block 6 — Context handoff
 
-After user APPROVED in Block 4, output exactly:
+After user APPROVED in Block 4b:
 
-> "Requirements resolved. Run `/inboxer-spec` and paste the following context block:"
+### 6a — Write the context block to the handoff file
 
-Then output a context block containing ALL of:
-- Feature branch name
-- Resolved task description (zero ambiguities, zero "or" branches)
-- Layout impact assessment (if UI task)
-- Skills with verbatim constraints
-- Acceptance criteria as a numbered list
-- Thinking level recommendation (Medium / High) with justification
+Write the context block to `.agent/handoffs/current-context.md`:
+
+```bash
+mkdir -p .agent/handoffs
+cat > .agent/handoffs/current-context.md << 'CONTEXT'
+Feature branch: [name]
+Resolved task: [description — zero ambiguities, zero "or" branches]
+Layout impact: [assessment, or N/A]
+Skills and verbatim constraints: [full list]
+Acceptance criteria:
+1. [criterion]
+2. [criterion]
+Thinking level: [Medium / High — justification]
+CONTEXT
+```
+
+### 6b — Notify the user
+
+Output exactly:
+
+> "Requirements resolved. Run `/inboxer-spec` — it will read the context from `.agent/handoffs/current-context.md` automatically."
+
+Do not paste the context block into chat. The spec writer reads the file directly.
 
 ---
 
-## Gemini 3.1 Pro failure modes — this workflow guards against all of these
+## Failure modes this workflow guards against
 
 | # | Failure | Guard |
 |---|---|---|
@@ -187,7 +316,10 @@ Then output a context block containing ALL of:
 | 6 | Silent element reparenting | Block 3 layout assessment |
 | 7 | Unresolved "or" branches | Block 2 ambiguity check |
 | 8 | Deferred ambiguity (assumes + proceeds) | Block 2 questions gate |
-| 9 | Scope drift (fixing adjacent things) | Block 4 exact restatement |
+| 9 | Scope drift (fixing adjacent things) | Block 4b exact restatement |
 | 10 | Thin verification ("refresh browser") | Verification format required |
 | 11 | Test-driven component modification | GEMINI.md Rule T1 |
 | 12 | Not committing before task close | GEMINI.md Rule G3 |
+| 13 | Sycophantic planning (agrees with user without challenging gaps) | Block 2 interrogation |
+| 14 | Silent partial delivery | GEMINI.md Rule D1–D3 |
+| 15 | Assumption-based planning (skips reading files) | Block 1 hard requirement |

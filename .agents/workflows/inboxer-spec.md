@@ -1,16 +1,24 @@
 ---
-description: /inboxer-spec
----
-
----
 description: Inboxer Spec Writer — use after /inboxer-teamlead outputs an approved context block. Writes the full implementation spec, self-audits it, and invokes the Developer.
 ---
 
 # Inboxer — Spec Writer
 
-Triggered after `/inboxer-teamlead` outputs an approved context block.
+Triggered after `/inboxer-teamlead` writes an approved context block.
 You write the complete spec, self-audit it, write a verification plan, then invoke the Developer.
 The rules in `GEMINI.md` are always active and must be enforced explicitly in this spec.
+
+---
+
+## Step 0 — Read the context block
+
+Read `.agent/handoffs/current-context.md`.
+This is your input. Do not proceed until you have read it.
+
+If the file does not exist or is empty: stop immediately and notify Team Lead.
+> "Context handoff file not found at `.agent/handoffs/current-context.md`. Team Lead must write the approved context to this path before the spec can be written."
+
+Do not ask the user to paste the context block manually.
 
 ---
 
@@ -111,6 +119,15 @@ Before submitting walkthrough:
   git log --oneline -3    ← paste this output in your walkthrough
 ```
 
+### 1j. Completion requirement
+List any items explicitly deferred from this spec and why:
+```
+DEFERRED ITEMS
+--------------
+[item]: deferred because [specific reason] — impact: [what breaks or is missing without it]
+```
+If nothing is deferred: write `DEFERRED ITEMS: none`
+
 ---
 
 ## Step 2 — Self-audit
@@ -136,9 +153,20 @@ All skill constraints copied verbatim:             [YES/NO — list missing skil
 All acceptance criteria concretely testable:       [YES/NO — list any vague ones]
 CLASS INVENTORY section present (testing tasks):   [YES/NO/N/A]
 Commit instruction included:                       [YES/NO]
+Completion requirement section present (1j):       [YES/NO]
 ```
 
-Do not proceed to Step 3 until all items are YES or N/A.
+### Step 2b — Assumption challenge
+
+Before declaring the spec ready, actively try to break it:
+- What happens if the backend returns an empty response?
+- What happens if a required frontmatter field is missing?
+- What happens if the file changes while being written?
+- What happens if the user triggers this feature twice in quick succession?
+
+If any of these produce an unhandled state: add it to 1e or 1f before proceeding.
+
+Do not proceed to Step 3 until all self-audit items are YES or N/A and assumption challenge passes.
 
 ---
 
@@ -175,7 +203,7 @@ Always include these three:
 
 ## Step 4 — Approval gate
 
-After self-audit passes (all YES/N/A), output exactly:
+After self-audit passes (all YES/N/A) and assumption challenge passes, output exactly:
 
 > "Spec complete. Switch to your implementation model and reply APPROVED to begin development."
 
@@ -183,15 +211,25 @@ Do not invoke the Developer until APPROVED is received.
 
 ---
 
-## Step 5 — Invoke Developer
+## Step 5 — Write spec to handoff file and invoke Developer
+
+After receiving APPROVED:
+
+### 5a — Write spec to handoff file
+
+```bash
+mkdir -p .agent/handoffs
+cat > .agent/handoffs/current-spec.md << 'SPEC'
+[paste complete spec — all sections 1a–1j]
+SPEC
+```
+
+### 5b — Invoke Developer
 
 Send to `/inboxer-fullstackdev`:
-- Complete spec (all sections 1a–1i)
-- Permitted file list
+- Direct it to read the spec from `.agent/handoffs/current-spec.md`
 - Acceptance criteria (numbered list)
 - Skills to load
-- Constraints (verbatim)
-- Verification plan (Step 3)
 - Thinking level (from Team Lead context block)
 
 Then output:
