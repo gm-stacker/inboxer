@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { getBriefing, getVaultConfig, saveVaultConfig, clearVaultConfig, renameCategory, getNoteDetail, updateNoteContent, getTaxonomies, getCategoryNotes, synthesizeEchoes, moveNote, saveConversation, submitChat, captureRawText } from './services/api';
 import './App.css'
-import type { SelectedNote, ChatTurn, ToastFlag, MorningBriefing } from './types/index';
+import type { SelectedNote, ChatTurn, ToastFlag, MorningBriefing, ChatMessage } from './types/index';
 import { Sidebar } from './components/layout/Sidebar';
 import { NoteEditor } from './components/editor/NoteEditor';
 import { CaptureView } from './components/capture/CaptureView';
@@ -65,6 +65,18 @@ function App() {
     setToastFlags,
     setDynamicEchoes
   });
+
+  // Capture Panel State (Hoisted)
+  const [captureMode, setCaptureMode] = useState<'capture' | 'query'>('capture');
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [isQuerying, setIsQuerying] = useState(false);
+  const preNoteState = useRef<{ captureMode: 'capture' | 'query'; chatHistory: ChatMessage[] } | null>(null);
+
+  const handleTimelineNoteClick = (filename: string) => {
+    preNoteState.current = { captureMode, chatHistory };
+    handleSelectSourceFile(filename);
+  };
+
 
   // Vault Config State
   const [vaultPath, setVaultPath] = useState('')
@@ -523,7 +535,14 @@ function App() {
               taxonomies={taxonomies}
               isSaving={isSaving}
               actions={{
-                onClose: () => setSelectedNote(null),
+                onClose: () => {
+                  if (preNoteState.current) {
+                    setCaptureMode(preNoteState.current.captureMode);
+                    setChatHistory(preNoteState.current.chatHistory);
+                    preNoteState.current = null;
+                  }
+                  setSelectedNote(null);
+                },
                 onUpdateContent: (newContent) => setSelectedNote({ ...selectedNote, content: newContent }),
                 onNoteDeleted: () => handleNoteOperationComplete(selectedNote.category),
                 onNoteMoved: () => handleNoteOperationComplete(selectedNote.category),
@@ -537,8 +556,13 @@ function App() {
               selectedCategory={selectedCategory}
               handleSelectCategory={handleSelectCategory}
               fetchTaxonomy={fetchTaxonomy}
-              handleSelectSourceFile={handleSelectSourceFile}
-
+              handleSelectSourceFile={handleTimelineNoteClick}
+              captureMode={captureMode}
+              setCaptureMode={setCaptureMode}
+              chatHistory={chatHistory}
+              setChatHistory={setChatHistory}
+              isQuerying={isQuerying}
+              setIsQuerying={setIsQuerying}
             />
           )}
         </div>

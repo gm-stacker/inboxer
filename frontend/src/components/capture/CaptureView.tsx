@@ -8,13 +8,25 @@ interface CaptureViewProps {
     handleSelectCategory: (category: string) => Promise<void>;
     handleSelectSourceFile: (sourceFile: string) => void;
     fetchTaxonomy: () => Promise<void>;
+    captureMode: 'capture' | 'query';
+    setCaptureMode: React.Dispatch<React.SetStateAction<'capture' | 'query'>>;
+    chatHistory: ChatMessage[];
+    setChatHistory: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+    isQuerying: boolean;
+    setIsQuerying: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const CaptureView: React.FC<CaptureViewProps> = ({
     selectedCategory,
     handleSelectCategory,
     handleSelectSourceFile,
-    fetchTaxonomy
+    fetchTaxonomy,
+    captureMode,
+    setCaptureMode,
+    chatHistory,
+    setChatHistory,
+    isQuerying,
+    setIsQuerying
 }) => {
     const [inputText, setInputText] = useState('')
     const [statusMessage, setStatusMessage] = useState('')
@@ -32,9 +44,6 @@ export const CaptureView: React.FC<CaptureViewProps> = ({
 
     const captureFileInputRef = useRef<HTMLInputElement>(null)
 
-    const [captureMode, setCaptureMode] = useState<'capture' | 'query'>('capture')
-    const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
-    const [isQuerying, setIsQuerying] = useState(false)
     const [captureQueue, setCaptureQueue] = useState<CaptureQueueItem[]>([])
     const [lastCaptureDetails, setLastCaptureDetails] = useState<ValidationDetails | null>(null)
 
